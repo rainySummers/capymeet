@@ -16,6 +16,8 @@
 
 CapyMeet is a meeting room booking system for workplace spaces. It covers employee booking, meeting room door displays, admin operations, approval flows, QR booking links, and optional email notifications. It is suitable for internal meeting rooms, shared offices, training rooms, showroom meeting areas, and any environment that needs centralized room scheduling.
 
+CapyMeet exists to make meeting-room operations affordable and self-owned. Instead of buying a commercial scheduling system, a paid SaaS subscription, or dedicated door-display hardware, teams can reuse devices they already have, such as old tablets outside rooms, phones for QR booking, and any laptop for admin work. The software is open source and completely free to use, so small teams can build a practical booking and display workflow using existing devices, with little to no new cost.
+
 The system has three user-facing entry points:
 
 | Entry point | Typical users | Purpose |

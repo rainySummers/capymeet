@@ -1,0 +1,53 @@
+{
+  "name": "capymeet",
+  "version": "0.1.0",
+  "description": "Meeting room booking, door display, and admin management for workplace spaces.",
+  "license": "Apache-2.0",
+  "keywords": [
+    "meeting-room",
+    "booking",
+    "cloudflare-pages",
+    "cloudflare-d1",
+    "react"
+  ],
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "vite",
+    "dev:worker": "wrangler pages dev dist --d1 DB=capymeet --compatibility-date=2026-04-28",
+    "build": "tsc --noEmit && vite build",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "db:migrate:local": "wrangler d1 migrations apply capymeet --local",
+    "db:migrate:remote": "wrangler d1 migrations apply capymeet --remote",
+    "deploy": "npm run build && wrangler pages deploy dist"
+  },
+  "dependencies": {
+    "@hono/zod-validator": "^0.7.6",
+    "bcryptjs": "^3.0.3",
+    "hono": "^4.12.15",
+    "jose": "^6.2.3",
+    "qrcode": "^1.5.4",
+    "react": "^19.2.5",
+    "react-dom": "^19.2.5",
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20260426.1",
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.2",
+    "@testing-library/user-event": "^14.6.1",
+    "@types/node": "^25.6.0",
+    "@types/qrcode": "^1.5.6",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^6.0.1",
+    "jsdom": "^29.1.0",
+    "typescript": "^6.0.3",
+    "vite": "^8.0.10",
+    "vitest": "^4.1.5",
+    "wrangler": "^4.85.0"
+  }
+}

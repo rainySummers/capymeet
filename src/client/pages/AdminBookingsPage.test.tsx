@@ -182,11 +182,19 @@ describe("AdminBookingsPage error handling", () => {
       })
       .mockResolvedValueOnce({
         ok: true,
+        json: vi.fn().mockResolvedValue({ settings: { businessTimeZone: "Europe/Berlin" } }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
         json: vi.fn().mockResolvedValue({ bookingId: "booking-1", status: "confirmed" }),
       })
       .mockResolvedValueOnce({
         ok: true,
         json: vi.fn().mockResolvedValue({ bookings: [], rooms: [{ id: "room-1", name: "Board Room" }] }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: vi.fn().mockResolvedValue({ settings: { businessTimeZone: "Europe/Berlin" } }),
       });
     vi.stubGlobal("fetch", fetchMock);
 
@@ -210,7 +218,7 @@ describe("AdminBookingsPage error handling", () => {
     await user.type(within(bookingDialog).getByLabelText("End"), "2026-04-29T19:19");
     await user.click(within(bookingDialog).getByRole("button", { name: "Create booking" }));
 
-    expect(fetchMock).toHaveBeenNthCalledWith(2, "/api/admin/bookings", {
+    expect(fetchMock).toHaveBeenCalledWith("/api/admin/bookings", {
       method: "POST",
       body: JSON.stringify({
         roomId: "room-1",
@@ -240,6 +248,10 @@ describe("AdminBookingsPage error handling", () => {
             bookings: [],
             rooms: [{ id: "room-1", name: "Board Room" }],
           }),
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          json: vi.fn().mockResolvedValue({ settings: { businessTimeZone: "Europe/Berlin" } }),
         })
         .mockResolvedValueOnce({
           ok: false,
@@ -322,11 +334,19 @@ describe("AdminBookingsPage error handling", () => {
       })
       .mockResolvedValueOnce({
         ok: true,
+        json: vi.fn().mockResolvedValue({ settings: { businessTimeZone: "Europe/Berlin" } }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
         json: vi.fn().mockResolvedValue({ ok: true }),
       })
       .mockResolvedValueOnce({
         ok: true,
         json: vi.fn().mockResolvedValue({ bookings: [], rooms: [{ id: "room-1", name: "Board Room" }] }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: vi.fn().mockResolvedValue({ settings: { businessTimeZone: "Europe/Berlin" } }),
       });
     vi.stubGlobal("fetch", fetchMock);
 
@@ -340,7 +360,7 @@ describe("AdminBookingsPage error handling", () => {
     await user.click(within(planningRow as HTMLElement).getByRole("button", { name: "Delete" }));
 
     expect(confirmSpy).toHaveBeenCalledWith("Delete this booking?");
-    expect(fetchMock).toHaveBeenNthCalledWith(2, "/api/admin/bookings/booking-2", {
+    expect(fetchMock).toHaveBeenCalledWith("/api/admin/bookings/booking-2", {
       method: "DELETE",
       headers: {
         "Content-Type": "application/json",

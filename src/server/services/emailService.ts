@@ -1,4 +1,4 @@
-import { BUSINESS_TIME_ZONE, getZonedParts } from "../../shared/time";
+import { BUSINESS_TIME_ZONE, formatEmailTimeZoneLabel, getZonedParts } from "../../shared/time";
 
 export type EmailEvent =
   | "booking_confirmed"
@@ -72,16 +72,18 @@ export function buildBookingEmailText(input: {
   startTime: string;
   endTime: string;
   replyInstructions?: string;
+  businessTimeZone?: string;
 }): string {
-  const timeZoneLabel = `${BUSINESS_TIME_ZONE} (Berlin time)`;
+  const businessTimeZone = input.businessTimeZone ?? BUSINESS_TIME_ZONE;
+  const timeZoneLabel = formatEmailTimeZoneLabel(businessTimeZone);
   const lines = [
     input.statusLine,
     "",
     `Meeting: ${input.title}`,
     `Room: ${input.roomName ?? input.roomId}`,
     `Time zone: ${timeZoneLabel}`,
-    `Start: ${formatBerlinTime(input.startTime)}`,
-    `End: ${formatBerlinTime(input.endTime)}`,
+    `Start: ${formatZonedTime(input.startTime, businessTimeZone)}`,
+    `End: ${formatZonedTime(input.endTime, businessTimeZone)}`,
   ];
 
   if (input.replyInstructions) {
@@ -91,8 +93,8 @@ export function buildBookingEmailText(input: {
   return lines.join("\n");
 }
 
-function formatBerlinTime(value: string): string {
-  const parts = getZonedParts(value, BUSINESS_TIME_ZONE);
+function formatZonedTime(value: string, timeZone: string): string {
+  const parts = getZonedParts(value, timeZone);
   return `${parts.year}-${pad2(parts.month)}-${pad2(parts.day)} ${pad2(parts.hour)}:${pad2(parts.minute)}`;
 }
 
@@ -107,6 +109,7 @@ export function buildApprovedBookingEmailText(input: {
   startTime: string;
   endTime: string;
   replyInstructions: string;
+  businessTimeZone?: string;
 }): string {
   return buildBookingEmailText({
     ...input,

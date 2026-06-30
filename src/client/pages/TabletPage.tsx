@@ -4,12 +4,14 @@ import QRCode from "qrcode/lib/browser";
 import type { Room } from "../../shared/types";
 import {
   BUSINESS_TIME_ZONE,
-  BUSINESS_TIME_ZONE_LABEL,
   formatBusinessTimeRange,
+  formatBusinessTimeZoneLabel,
   getZonedDateString,
 } from "../../shared/time";
 import { api, type PublicRoomBooking } from "../api";
+import { loadPublicBusinessTimeZone } from "../businessTimeZone";
 import capymeetLogo from "../assets/capymeet-logo.png";
+import { PublicLanguageToggle, usePublicI18n } from "../i18n/publicI18n";
 
 type LoadState = "loading" | "loaded" | "error";
 type BookingTimeState = "current" | "upcoming" | "past";
@@ -17,12 +19,14 @@ type BookingTimeState = "current" | "upcoming" | "past";
 const TABLET_REFRESH_MS = 10000;
 const TABLET_IDLE_RETURN_MS = 10000;
 
-function todayDateString(): string {
-  return getZonedDateString(new Date(Date.now()));
+type Translate = (key: string, values?: Record<string, string | number>) => string;
+
+function todayDateString(timeZone: string): string {
+  return getZonedDateString(new Date(Date.now()), timeZone);
 }
 
-function formatBookingTime(startTime: string, endTime: string): string {
-  return formatBusinessTimeRange(startTime, endTime);
+function formatBookingTime(startTime: string, endTime: string, timeZone: string): string {
+  return formatBusinessTimeRange(startTime, endTime, timeZone);
 }
 
 function isConfirmedBooking(booking: PublicRoomBooking): boolean {
@@ -38,39 +42,42 @@ function getBookingTimeState(booking: PublicRoomBooking, currentTime: number): B
   return currentTime < startTime ? "upcoming" : "past";
 }
 
-function bookingTimeStateLabel(timeState: BookingTimeState): string {
+function bookingTimeStateLabel(timeState: BookingTimeState, t: Translate): string {
   if (timeState === "current") {
-    return "Now";
+    return t("tablet.timeState.current");
   }
-  return timeState === "past" ? "Ended" : "Upcoming";
+  return timeState === "past" ? t("tablet.timeState.past") : t("tablet.timeState.upcoming");
 }
 
-function roomCapacityLabel(room: Room | null): string | null {
+function roomCapacityLabel(room: Room | null, t: Translate): string | null {
   if (!room?.capacity) {
     return null;
   }
-  return `(${room.capacity} ${room.capacity === 1 ? "person" : "people"})`;
+  return t(room.capacity === 1 ? "tablet.capacity.person" : "tablet.capacity.people", { count: room.capacity });
 }
 
 export function TabletPage({ deviceCode }: { deviceCode: string }) {
+  const { language, t } = usePublicI18n();
   const [rooms, setRooms] = useState<Room[]>([]);
+  const [businessTimeZone, setBusinessTimeZone] = useState(BUSINESS_TIME_ZONE);
   const [defaultRoomId, setDefaultRoomId] = useState("");
   const [selectedRoomId, setSelectedRoomId] = useState("");
   const [loadState, setLoadState] = useState<LoadState>("loading");
   const [bookings, setBookings] = useState<PublicRoomBooking[]>([]);
   const [bookingsLoading, setBookingsLoading] = useState(false);
-  const [bookingsError, setBookingsError] = useState<string | null>(null);
+  const [bookingsError, setBookingsError] = useState(false);
   const [currentTime, setCurrentTime] = useState(() => Date.now());
   const [refreshTick, setRefreshTick] = useState(0);
   const [roomActivityTick, setRoomActivityTick] = useState(0);
   const [bookingQrCode, setBookingQrCode] = useState<string | null>(null);
   const bookingsRoomIdRef = useRef<string | null>(null);
+  const timeZoneLabel = formatBusinessTimeZoneLabel(businessTimeZone, language);
 
   const selectedRoom = useMemo(
     () => rooms.find((room) => room.id === selectedRoomId) ?? null,
     [rooms, selectedRoomId],
   );
-  const selectedRoomCapacityLabel = roomCapacityLabel(selectedRoom);
+  const selectedRoomCapacityLabel = roomCapacityLabel(selectedRoom, t);
   const confirmedBookings = useMemo(() => bookings.filter(isConfirmedBooking), [bookings]);
   const currentBooking = useMemo(
     () =>
@@ -99,13 +106,13 @@ export function TabletPage({ deviceCode }: { deviceCode: string }) {
     let cancelled = false;
     setLoadState("loading");
 
-    api
-      .getTablet(deviceCode)
-      .then((data) => {
+    Promise.all([api.getTablet(deviceCode), loadPublicBusinessTimeZone()])
+      .then(([data, loadedBusinessTimeZone]) => {
         if (cancelled) {
           return;
         }
         const roomId = data.defaultRoom?.id ?? data.rooms[0]?.id ?? "";
+        setBusinessTimeZone(loadedBusinessTimeZone);
         setRooms(data.rooms);
         setDefaultRoomId(roomId);
         setSelectedRoomId(roomId);
@@ -136,7 +143,7 @@ export function TabletPage({ deviceCode }: { deviceCode: string }) {
     let cancelled = false;
     if (!selectedRoomId) {
       setBookings([]);
-      setBookingsError(null);
+      setBookingsError(false);
       setBookingsLoading(false);
       bookingsRoomIdRef.current = null;
       return () => {
@@ -149,9 +156,9 @@ export function TabletPage({ deviceCode }: { deviceCode: string }) {
       setBookings([]);
     }
     setBookingsLoading(true);
-    setBookingsError(null);
+    setBookingsError(false);
     api
-      .listPublicBookings(selectedRoomId, todayDateString(), BUSINESS_TIME_ZONE)
+      .listPublicBookings(selectedRoomId, todayDateString(businessTimeZone), businessTimeZone)
       .then((result) => {
         if (!cancelled) {
           bookingsRoomIdRef.current = selectedRoomId;
@@ -163,7 +170,7 @@ export function TabletPage({ deviceCode }: { deviceCode: string }) {
           if (!canKeepExistingBookings) {
             setBookings([]);
           }
-          setBookingsError("Could not load bookings.");
+          setBookingsError(true);
         }
       })
       .finally(() => {
@@ -175,7 +182,7 @@ export function TabletPage({ deviceCode }: { deviceCode: string }) {
     return () => {
       cancelled = true;
     };
-  }, [refreshTick, selectedRoomId]);
+  }, [businessTimeZone, refreshTick, selectedRoomId]);
 
   useEffect(() => {
     if (!defaultRoomId || selectedRoomId === defaultRoomId) {
@@ -227,7 +234,8 @@ export function TabletPage({ deviceCode }: { deviceCode: string }) {
   if (loadState === "loading") {
     return (
       <section className="tablet">
-        <p className="tablet-message">Loading tablet...</p>
+        <PublicLanguageToggle className="tablet-language-toggle tablet-language-toggle--floating" />
+        <p className="tablet-message">{t("tablet.loading")}</p>
       </section>
     );
   }
@@ -235,8 +243,9 @@ export function TabletPage({ deviceCode }: { deviceCode: string }) {
   if (loadState === "error") {
     return (
       <section className="tablet">
+        <PublicLanguageToggle className="tablet-language-toggle tablet-language-toggle--floating" />
         <p className="tablet-message tablet-message--error" role="alert">
-          Could not load tablet.
+          {t("tablet.error")}
         </p>
       </section>
     );
@@ -250,29 +259,32 @@ export function TabletPage({ deviceCode }: { deviceCode: string }) {
       onPointerDownCapture={recordTabletActivity}
     >
       <div className="tablet-layout">
-        <main className="tablet-main-panel" aria-label="Room status">
+        <main className="tablet-main-panel" aria-label={t("tablet.roomStatus")}>
           <header className="tablet-header">
             <div className="tablet-header-top">
               <div className="tablet-logo-surface">
-                <img className="tablet-company-logo" src={capymeetLogo} alt="CapyMeet logo" />
+                <img className="tablet-company-logo" src={capymeetLogo} alt={t("tablet.logoAlt")} />
               </div>
-              {rooms.length > 0 ? (
-                <label className="tablet-switcher">
-                  <span>Switch room</span>
-                  <select value={selectedRoomId} onChange={(event) => setSelectedRoomId(event.target.value)}>
-                    {rooms.map((room) => (
-                      <option key={room.id} value={room.id}>
-                        {room.name}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              ) : null}
+              <div className="tablet-header-actions">
+                <PublicLanguageToggle className="tablet-language-toggle" />
+                {rooms.length > 0 ? (
+                  <label className="tablet-switcher">
+                    <span>{t("tablet.switchRoom")}</span>
+                    <select value={selectedRoomId} onChange={(event) => setSelectedRoomId(event.target.value)}>
+                      {rooms.map((room) => (
+                        <option key={room.id} value={room.id}>
+                          {room.name}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                ) : null}
+              </div>
             </div>
             <div className="tablet-room-heading">
-              <p className="tablet-room-kicker">Meeting Room</p>
+              <p className="tablet-room-kicker">{t("tablet.roomKicker")}</p>
               <div className="tablet-room-title">
-                <h1>{selectedRoom?.name ?? "No room selected"}</h1>
+                <h1>{selectedRoom?.name ?? t("tablet.noRoom")}</h1>
                 {selectedRoomCapacityLabel ? (
                   <span className="tablet-room-capacity">{selectedRoomCapacityLabel}</span>
                 ) : null}
@@ -281,51 +293,60 @@ export function TabletPage({ deviceCode }: { deviceCode: string }) {
           </header>
 
           <div className={`status-panel ${currentBooking ? "in-use" : "available"}`} aria-live="polite">
-            <span>{currentBooking ? "In Use" : "Available"}</span>
+            <span>{currentBooking ? t("tablet.status.inUse") : t("tablet.status.available")}</span>
             {currentBooking ? (
               <div className="status-panel__details">
-                <p>Now: {currentBooking.title}</p>
-                <p>Host: {currentBooking.contactName}</p>
-                <p>Time ({BUSINESS_TIME_ZONE_LABEL}): {formatBookingTime(currentBooking.startTime, currentBooking.endTime)}</p>
-                <p>Status: Confirmed</p>
+                <p>{t("tablet.current.now", { title: currentBooking.title })}</p>
+                <p>{t("tablet.current.host", { name: currentBooking.contactName })}</p>
+                <p>
+                  {t("tablet.current.time", {
+                    timeZone: timeZoneLabel,
+                    time: formatBookingTime(currentBooking.startTime, currentBooking.endTime, businessTimeZone),
+                  })}
+                </p>
+                <p>{t("tablet.current.status")}</p>
               </div>
             ) : null}
           </div>
 
-          <div className="tablet-booking-qr" role="group" aria-label="Room booking QR code">
+          <div className="tablet-booking-qr" role="group" aria-label={t("tablet.qr.group")}>
             <div className="tablet-booking-qr__copy">
-              <h2>Scan to book this room</h2>
-              <p>Scan with your mobile device to book this room.</p>
+              <h2>{t("tablet.qr.title")}</h2>
+              <p>{t("tablet.qr.description")}</p>
               {selectedRoom ? (
                 <p>
-                  Maximum meeting duration is {selectedRoom.maxDurationMinutes} minutes. Minimum booking duration is{" "}
-                  {selectedRoom.minDurationMinutes} minutes.
+                  {t("tablet.qr.limits", {
+                    max: selectedRoom.maxDurationMinutes,
+                    min: selectedRoom.minDurationMinutes,
+                  })}
                 </p>
               ) : null}
             </div>
             <div className="tablet-booking-qr__code">
               {bookingQrCode && selectedRoom ? (
-                <img src={bookingQrCode} alt={`Booking QR code for ${selectedRoom.name}`} />
+                <img src={bookingQrCode} alt={t("tablet.qr.imageAlt", { room: selectedRoom.name })} />
               ) : (
-                <p>Generating QR code...</p>
+                <p>{t("tablet.qr.generating")}</p>
               )}
             </div>
           </div>
         </main>
 
-        <aside className="tablet-side-panel tablet-schedule" aria-label="Today's bookings" aria-live="polite">
+        <aside className="tablet-side-panel tablet-schedule" aria-label={t("tablet.schedule.label")} aria-live="polite">
           <div className="tablet-schedule__header">
-            <h2>Today's bookings</h2>
+            <h2>{t("tablet.schedule.title")}</h2>
             <span className={bookingsLoading && confirmedBookings.length > 0 ? "tablet-schedule__sync" : undefined}>
-                  {bookingsLoading && confirmedBookings.length > 0 ? "Syncing..." : `${todayDateString()} · ${BUSINESS_TIME_ZONE_LABEL}`}
+              {bookingsLoading && confirmedBookings.length > 0
+                ? t("tablet.schedule.syncing")
+                : `${todayDateString(businessTimeZone)} · ${timeZoneLabel}`}
             </span>
           </div>
           {bookingsLoading && confirmedBookings.length === 0 ? (
-            <p className="tablet-schedule__empty">Loading bookings...</p>
+            <p className="tablet-schedule__empty">{t("tablet.schedule.loading")}</p>
           ) : bookingsError && confirmedBookings.length === 0 ? (
-            <p className="tablet-schedule__empty tablet-schedule__empty--error">{bookingsError}</p>
+            <p className="tablet-schedule__empty tablet-schedule__empty--error">{t("tablet.error.loadBookings")}</p>
           ) : confirmedBookings.length === 0 ? (
-            <p className="tablet-schedule__empty">No bookings today.</p>
+            <p className="tablet-schedule__empty">{t("tablet.schedule.empty")}</p>
           ) : (
             <ul className="tablet-schedule__list">
               {sortedBookings.map((booking) => {
@@ -334,10 +355,12 @@ export function TabletPage({ deviceCode }: { deviceCode: string }) {
                   <li className={`tablet-schedule__item tablet-schedule__item--${timeState}`} key={booking.id}>
                     <div className="tablet-schedule__item-header">
                       <strong>{booking.title}</strong>
-                      <span className="tablet-schedule__state">{bookingTimeStateLabel(timeState)}</span>
+                      <span className="tablet-schedule__state">{bookingTimeStateLabel(timeState, t)}</span>
                     </div>
-                    <span className="tablet-schedule__time">{formatBookingTime(booking.startTime, booking.endTime)}</span>
-                    <span>{booking.contactName} · Confirmed</span>
+                    <span className="tablet-schedule__time">
+                      {formatBookingTime(booking.startTime, booking.endTime, businessTimeZone)}
+                    </span>
+                    <span>{t("tablet.schedule.itemMeta", { contactName: booking.contactName })}</span>
                   </li>
                 );
               })}

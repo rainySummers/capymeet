@@ -2,25 +2,32 @@ import { useEffect, useState } from "react";
 
 import { AdminNav } from "../components/AdminNav";
 import { adminApi, type AdminBooking } from "../api";
+import { loadAdminBusinessTimeZone } from "../businessTimeZone";
 import { useAdminI18n } from "../i18n/adminI18n";
-import { formatBusinessDateTime } from "../../shared/time";
+import { BUSINESS_TIME_ZONE, formatBusinessDateTime, formatBusinessTimeZoneLabel } from "../../shared/time";
 
 type LoadState = "loading" | "loaded" | "error";
 
-function formatDateTime(value: string): string {
-  return formatBusinessDateTime(value);
+function formatDateTime(value: string, timeZone: string): string {
+  return formatBusinessDateTime(value, "en-US", timeZone);
 }
 
 export function AdminApprovalsPage() {
-  const { t } = useAdminI18n();
+  const { t, language } = useAdminI18n();
   const [bookings, setBookings] = useState<AdminBooking[]>([]);
+  const [businessTimeZone, setBusinessTimeZone] = useState(BUSINESS_TIME_ZONE);
   const [loadState, setLoadState] = useState<LoadState>("loading");
   const [message, setMessage] = useState("");
+  const timeZoneLabel = formatBusinessTimeZoneLabel(businessTimeZone, language);
 
   async function load() {
     setLoadState("loading");
-    const data = await adminApi.listApprovals();
+    const [data, loadedBusinessTimeZone] = await Promise.all([
+      adminApi.listApprovals(),
+      loadAdminBusinessTimeZone(),
+    ]);
     setBookings(data.bookings);
+    setBusinessTimeZone(loadedBusinessTimeZone);
     setLoadState("loaded");
   }
 
@@ -69,14 +76,14 @@ export function AdminApprovalsPage() {
         ) : null}
 
         {bookings.length > 0 ? (
-          <div className="admin-list" aria-label="Approvals list">
+          <div className="admin-list" aria-label={t("approvals.listLabel")}>
             {bookings.map((booking) => (
               <article className="list-row list-row--stacked" key={booking.id}>
                 <div>
                   <strong>{booking.title}</strong>
                   <p>
-                    {booking.roomName ?? booking.roomId} · {formatDateTime(booking.startTime)} -{" "}
-                    {formatDateTime(booking.endTime)} · {t("bookings.timeZoneLabel")}
+                    {booking.roomName ?? booking.roomId} · {formatDateTime(booking.startTime, businessTimeZone)} -{" "}
+                    {formatDateTime(booking.endTime, businessTimeZone)} · {timeZoneLabel}
                   </p>
                   <p>
                     {booking.contactName}

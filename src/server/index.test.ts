@@ -87,6 +87,13 @@ type EmailSettingsRow = {
   updated_by_admin_id: string | null;
 };
 
+type BusinessSettingsRow = {
+  id: "default";
+  business_time_zone: string;
+  updated_at: string;
+  updated_by_admin_id: string | null;
+};
+
 class FakePreparedStatement {
   private binds: unknown[] = [];
 
@@ -182,10 +189,16 @@ class FakePreparedStatement {
     if (this.sql.includes("FROM email_settings")) {
       return { results: this.db.emailSettings ? ([this.db.emailSettings] as T[]) : [] };
     }
+    if (this.sql.includes("FROM business_settings")) {
+      return { results: this.db.businessSettings ? ([this.db.businessSettings] as T[]) : [] };
+    }
     return { results: [] };
   }
 
   async first<T>(): Promise<T | null> {
+    if (this.sql.includes("FROM business_settings")) {
+      return (this.db.businessSettings as T | null) ?? null;
+    }
     if (this.sql.includes("FROM email_settings")) {
       return (this.db.emailSettings as T | null) ?? null;
     }
@@ -401,6 +414,21 @@ class FakePreparedStatement {
       };
       return { meta: { changes: 1 } };
     }
+    if (this.sql.includes("INSERT INTO business_settings")) {
+      const [id, businessTimeZone, updatedAt, updatedByAdminId] = this.binds as [
+        "default",
+        string,
+        string,
+        string,
+      ];
+      this.db.businessSettings = {
+        id,
+        business_time_zone: businessTimeZone,
+        updated_at: updatedAt,
+        updated_by_admin_id: updatedByAdminId,
+      };
+      return { meta: { changes: 1 } };
+    }
     if (this.sql.includes("UPDATE booking_links")) {
       const [isEnabled, updatedAt, id] = this.binds as [number, string, string];
       const link = this.db.bookingLinks.find((candidate) => candidate.id === id);
@@ -555,6 +583,7 @@ class FakeD1Database {
     readonly devices: DeviceRow[] = [],
     readonly bookingLinks: BookingLinkRow[] = [],
     public emailSettings: EmailSettingsRow | null = null,
+    public businessSettings: BusinessSettingsRow | null = null,
   ) {}
 
   prepare(sql: string): FakePreparedStatement {
@@ -632,6 +661,17 @@ describe("public API routes", () => {
 
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({ ok: true });
+  });
+
+  it("returns default public business settings", async () => {
+    const response = await app.request("/api/public/settings", {}, { DB: new FakeD1Database().asD1() });
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({
+      settings: {
+        businessTimeZone: "Europe/Berlin",
+      },
+    });
   });
 
   it("returns enabled rooms", async () => {
@@ -741,6 +781,42 @@ describe("public API routes", () => {
 
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({ bookings: [] });
+  });
+
+  it("uses the saved business timezone when listing public bookings by date", async () => {
+    const newYorkEveningBooking: BookingRow = {
+      ...booking,
+      id: "new-york-evening",
+      start_time: "2026-04-30T02:00:00.000Z",
+      end_time: "2026-04-30T03:00:00.000Z",
+    };
+    const db = new FakeD1Database([room], [newYorkEveningBooking], [], [], [], null, {
+      id: "default",
+      business_time_zone: "America/New_York",
+      updated_at: "2026-04-28T00:00:00.000Z",
+      updated_by_admin_id: null,
+    });
+
+    const response = await app.request(
+      "/api/public/bookings?roomId=room-1&date=2026-04-29",
+      {},
+      { DB: db.asD1() },
+    );
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({
+      bookings: [
+        {
+          id: "new-york-evening",
+          roomId: "room-1",
+          title: "Planning",
+          contactName: "Alice",
+          startTime: "2026-04-30T02:00:00.000Z",
+          endTime: "2026-04-30T03:00:00.000Z",
+          status: "confirmed",
+        },
+      ],
+    });
   });
 
   it("does not expose public bookings for disabled rooms", async () => {
@@ -1126,6 +1202,58 @@ describe("admin API routes", () => {
 
     expect(response.status).toBe(401);
     expect(await response.json()).toEqual({ error: "unauthorized" });
+  });
+
+  it("returns and updates business settings for authenticated admins", async () => {
+    const db = new FakeD1Database([], [], [enabledAdmin]);
+
+    const defaultResponse = await app.request(
+      "/api/admin/business-settings",
+      { headers: await adminHeaders() },
+      { DB: db.asD1(), JWT_SECRET: TEST_JWT_SECRET },
+    );
+    expect(defaultResponse.status).toBe(200);
+    expect(await defaultResponse.json()).toEqual({
+      settings: {
+        businessTimeZone: "Europe/Berlin",
+      },
+    });
+
+    const updateResponse = await app.request(
+      "/api/admin/business-settings",
+      {
+        ...(await adminJsonRequest({ businessTimeZone: "America/New_York" })),
+        method: "PUT",
+      },
+      { DB: db.asD1(), JWT_SECRET: TEST_JWT_SECRET },
+    );
+    expect(updateResponse.status).toBe(200);
+    expect(await updateResponse.json()).toEqual({
+      settings: {
+        businessTimeZone: "America/New_York",
+      },
+    });
+    expect(db.businessSettings).toMatchObject({
+      id: "default",
+      business_time_zone: "America/New_York",
+      updated_by_admin_id: "admin-1",
+    });
+  });
+
+  it("rejects invalid business timezones", async () => {
+    const db = new FakeD1Database([], [], [enabledAdmin]);
+
+    const response = await app.request(
+      "/api/admin/business-settings",
+      {
+        ...(await adminJsonRequest({ businessTimeZone: "not-a-timezone" })),
+        method: "PUT",
+      },
+      { DB: db.asD1(), JWT_SECRET: TEST_JWT_SECRET },
+    );
+
+    expect(response.status).toBe(400);
+    expect(db.businessSettings).toBeNull();
   });
 
   it("requires auth before listing booking links", async () => {

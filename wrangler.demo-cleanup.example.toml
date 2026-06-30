@@ -1,0 +1,11 @@
+name = "capymeet-demo-cleanup"
+main = "src/workers/demoCleanup.ts"
+compatibility_date = "2026-04-28"
+
+[triggers]
+crons = ["0 20 * * SUN"]
+
+[[d1_databases]]
+binding = "DB"
+database_name = "capymeet-demo"
+database_id = "<your-demo-d1-database-id>"

@@ -5,12 +5,27 @@
 </p>
 
 <p align="center">
+  <a href="docs/user-manual-zh.md"><img src="https://img.shields.io/badge/DOCS-%E4%BD%BF%E7%94%A8%E6%89%8B%E5%86%8C-f6c90e?style=for-the-badge&labelColor=4a4a4a" alt="使用手册"></a>
+  <a href="https://capymeet-demo.pages.dev/admin/login"><img src="https://img.shields.io/badge/DEMO-CAPYMEET--DEMO.PAGES.DEV-2f80ed?style=for-the-badge&labelColor=4a4a4a" alt="CapyMeet 演示站"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/LICENSE-Apache--2.0-43a047?style=for-the-badge&labelColor=4a4a4a" alt="Apache 2.0 许可证"></a>
+  <a href="README.md"><img src="https://img.shields.io/badge/LANG-ENGLISH-d83a3a?style=for-the-badge&labelColor=4a4a4a" alt="English README"></a>
+</p>
+
+<p align="center">
   <img src="src/client/assets/capymeet-logo.png" alt="CapyMeet Logo" width="200">
 </p>
 
 <p align="center">
   <strong>面向企业会议室场景的预约、门牌与后台管理系统</strong>
 </p>
+
+## 在线演示
+
+演示站仅用于评估和展示，请不要作为生产环境使用。演示数据库每周会自动清理一次。
+
+- 管理后台登录：<https://capymeet-demo.pages.dev/admin/login>
+- 邮箱：`demo@capymeet.local`
+- 密码：`1246511b11b1144e66f63bb2`
 
 ## 项目简介
 

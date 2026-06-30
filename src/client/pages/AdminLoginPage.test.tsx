@@ -20,6 +20,18 @@ describe("AdminLoginPage", () => {
     expect(screen.getByLabelText("Password")).toBeInTheDocument();
   });
 
+  it("warns that the environment is for demos only", async () => {
+    render(<AdminLoginPage />);
+
+    const dialog = screen.getByRole("dialog", { name: "Demo environment" });
+    expect(dialog).toHaveTextContent("This site is for demo use only.");
+    expect(dialog).toHaveTextContent("The demo database is cleared automatically once per week.");
+
+    await userEvent.click(screen.getByRole("button", { name: "I understand" }));
+
+    expect(screen.queryByRole("dialog", { name: "Demo environment" })).not.toBeInTheDocument();
+  });
+
   it("shows a safe error message when login fails", async () => {
     const fetchMock = vi.fn().mockResolvedValue({ ok: false });
     vi.stubGlobal("fetch", fetchMock);

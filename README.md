@@ -5,12 +5,27 @@
 </p>
 
 <p align="center">
+  <a href="docs/user-manual.md"><img src="https://img.shields.io/badge/DOCS-USER%20MANUAL-f6c90e?style=for-the-badge&labelColor=4a4a4a" alt="User manual"></a>
+  <a href="https://capymeet-demo.pages.dev/admin/login"><img src="https://img.shields.io/badge/DEMO-CAPYMEET--DEMO.PAGES.DEV-2f80ed?style=for-the-badge&labelColor=4a4a4a" alt="CapyMeet demo"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/LICENSE-Apache--2.0-43a047?style=for-the-badge&labelColor=4a4a4a" alt="Apache 2.0 license"></a>
+  <a href="README.zh.md"><img src="https://img.shields.io/badge/LANG-%E4%B8%AD%E6%96%87-d83a3a?style=for-the-badge&labelColor=4a4a4a" alt="Chinese README"></a>
+</p>
+
+<p align="center">
   <img src="src/client/assets/capymeet-logo.png" alt="CapyMeet Logo" width="200">
 </p>
 
 <p align="center">
   <strong>Meeting room booking, door display, and admin management for workplace spaces</strong>
 </p>
+
+## Live Demo
+
+The public demo is for evaluation only. Do not use it as a production environment. Demo data is cleared automatically once per week.
+
+- Admin login: <https://capymeet-demo.pages.dev/admin/login>
+- Email: `demo@capymeet.local`
+- Password: `1246511b11b1144e66f63bb2`
 
 ## Overview
 

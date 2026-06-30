@@ -125,7 +125,7 @@ export function AdminAdminsPage() {
         {loadState === "loaded" && admins.length === 0 ? <p className="page-footnote">{t("admins.empty")}</p> : null}
 
         {admins.length > 0 ? (
-          <div className="admin-list" aria-label="Admins list">
+          <div className="admin-list" aria-label={t("admins.listLabel")}>
             {admins.map((admin) => (
               <article className="list-row" key={admin.id}>
                 <div className="list-row__content">

@@ -22,7 +22,10 @@
     "test:watch": "vitest",
     "db:migrate:local": "wrangler d1 migrations apply capymeet --local",
     "db:migrate:remote": "wrangler d1 migrations apply capymeet --remote",
-    "deploy": "npm run build && wrangler pages deploy dist"
+    "db:migrate:demo": "wrangler d1 migrations apply capymeet-demo --remote",
+    "deploy": "npm run build && wrangler pages deploy dist",
+    "deploy:demo": "npm run build && wrangler pages deploy dist --project-name capymeet-demo",
+    "deploy:demo-cleanup": "wrangler deploy --config wrangler.demo-cleanup.toml"
   },
   "dependencies": {
     "@hono/zod-validator": "^0.7.6",

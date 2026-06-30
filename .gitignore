@@ -5,6 +5,7 @@ node_modules/
 dist/
 .wrangler/
 wrangler.toml
+wrangler.demo-cleanup.toml
 .dev.vars
 .env
 .env.*

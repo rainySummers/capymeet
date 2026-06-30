@@ -3,8 +3,16 @@ import { useEffect, useState } from "react";
 import type { Room } from "../../shared/types";
 import { AdminNav } from "../components/AdminNav";
 import { adminApi, type AdminBooking } from "../api";
+import { loadAdminBusinessTimeZone } from "../businessTimeZone";
 import { useAdminI18n } from "../i18n/adminI18n";
-import { formatBusinessDate, formatBusinessTime, getZonedDateString } from "../../shared/time";
+import {
+  BUSINESS_TIME_ZONE,
+  BUSINESS_TIME_ZONE_OPTIONS,
+  formatBusinessDate,
+  formatBusinessTime,
+  formatBusinessTimeZoneLabel,
+  getZonedDateString,
+} from "../../shared/time";
 
 type LoadState = "loading" | "loaded" | "error";
 const activeBookingStatuses = new Set(["confirmed", "pending_approval"]);
@@ -14,26 +22,26 @@ const dateLocaleByLanguage = {
   zh: "zh-CN",
 } as const;
 
-function isSameLocalDay(value: string, reference: Date): boolean {
-  return getZonedDateString(value) === getZonedDateString(reference);
+function isSameLocalDay(value: string, reference: Date, timeZone: string): boolean {
+  return getZonedDateString(value, timeZone) === getZonedDateString(reference, timeZone);
 }
 
-function formatTime(value: string): string {
-  return formatBusinessTime(value);
+function formatTime(value: string, timeZone: string): string {
+  return formatBusinessTime(value, timeZone);
 }
 
-function formatDateTimeRange(startTime: string, endTime: string, locale: string): string {
-  const date = formatBusinessDate(startTime, locale, { month: "short", day: "numeric" });
-  return `${date}, ${formatTime(startTime)} - ${formatTime(endTime)}`;
+function formatDateTimeRange(startTime: string, endTime: string, locale: string, timeZone: string): string {
+  const date = formatBusinessDate(startTime, locale, { month: "short", day: "numeric" }, timeZone);
+  return `${date}, ${formatTime(startTime, timeZone)} - ${formatTime(endTime, timeZone)}`;
 }
 
 function isActiveBooking(booking: AdminBooking): boolean {
   return activeBookingStatuses.has(booking.status);
 }
 
-function roomBookings(roomId: string, bookings: AdminBooking[], now: Date): AdminBooking[] {
+function roomBookings(roomId: string, bookings: AdminBooking[], now: Date, timeZone: string): AdminBooking[] {
   return bookings
-    .filter((booking) => booking.roomId === roomId && isSameLocalDay(booking.startTime, now))
+    .filter((booking) => booking.roomId === roomId && isSameLocalDay(booking.startTime, now, timeZone))
     .filter(isActiveBooking)
     .sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime());
 }
@@ -46,8 +54,8 @@ function upcomingRoomBookings(roomId: string, bookings: AdminBooking[], now: Dat
     .sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime());
 }
 
-function getRoomStatus(room: Room, bookings: AdminBooking[], now: Date) {
-  const todayBookings = roomBookings(room.id, bookings, now);
+function getRoomStatus(room: Room, bookings: AdminBooking[], now: Date, timeZone: string) {
+  const todayBookings = roomBookings(room.id, bookings, now, timeZone);
   const current = todayBookings.find(
     (booking) =>
       booking.status === "confirmed" && new Date(booking.startTime) <= now && new Date(booking.endTime) > now,
@@ -72,20 +80,28 @@ export function AdminDashboardPage() {
   const dateLocale = dateLocaleByLanguage[language];
   const [rooms, setRooms] = useState<Room[]>([]);
   const [bookings, setBookings] = useState<AdminBooking[]>([]);
+  const [businessTimeZone, setBusinessTimeZone] = useState(BUSINESS_TIME_ZONE);
+  const [timeZoneMessage, setTimeZoneMessage] = useState("");
   const [loadState, setLoadState] = useState<LoadState>("loading");
   const [expandedRoomIds, setExpandedRoomIds] = useState<Set<string>>(() => new Set());
+  const timeZoneLabel = formatBusinessTimeZoneLabel(businessTimeZone, language);
 
   useEffect(() => {
     let cancelled = false;
     setLoadState("loading");
 
-    Promise.all([adminApi.listRooms(), adminApi.listBookings()])
-      .then(([roomData, bookingData]) => {
+    Promise.all([
+      adminApi.listRooms(),
+      adminApi.listBookings(),
+      loadAdminBusinessTimeZone(),
+    ])
+      .then(([roomData, bookingData, loadedBusinessTimeZone]) => {
         if (cancelled) {
           return;
         }
         setRooms(roomData.rooms);
         setBookings(bookingData.bookings);
+        setBusinessTimeZone(loadedBusinessTimeZone);
         setLoadState("loaded");
       })
       .catch(() => {
@@ -101,16 +117,49 @@ export function AdminDashboardPage() {
     };
   }, []);
 
+  async function updateBusinessTimeZone(nextTimeZone: string) {
+    const previousTimeZone = businessTimeZone;
+    setBusinessTimeZone(nextTimeZone);
+    setTimeZoneMessage("");
+    try {
+      const data = await adminApi.updateBusinessSettings({ businessTimeZone: nextTimeZone });
+      setBusinessTimeZone(data.settings.businessTimeZone);
+      setTimeZoneMessage(t("dashboard.timeZoneSaved"));
+    } catch {
+      setBusinessTimeZone(previousTimeZone);
+      setTimeZoneMessage(t("dashboard.timeZoneSaveError"));
+    }
+  }
+
   return (
     <section className="admin-layout">
       <AdminNav />
 
       <main className="admin-main">
         <header className="page-header">
-          <h1>{t("dashboard.title")}</h1>
-          <p>{t("dashboard.subtitle")}</p>
+          <div>
+            <h1>{t("dashboard.title")}</h1>
+            <p>{t("dashboard.subtitle")}</p>
+          </div>
+          <div className="page-header__actions">
+            <label className="admin-toolbar__control" htmlFor="dashboard-business-time-zone">
+              <span>{t("dashboard.timeZoneLabel")}</span>
+              <select
+                id="dashboard-business-time-zone"
+                value={businessTimeZone}
+                onChange={(event) => void updateBusinessTimeZone(event.target.value)}
+              >
+                {BUSINESS_TIME_ZONE_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {formatBusinessTimeZoneLabel(option.value, language)}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
         </header>
 
+        {timeZoneMessage ? <p className="form-message">{timeZoneMessage}</p> : null}
         {loadState === "loading" ? <p className="form-message">{t("dashboard.loading")}</p> : null}
         {loadState === "error" ? (
           <p className="form-message form-message--error" role="alert">
@@ -123,10 +172,10 @@ export function AdminDashboardPage() {
         ) : null}
 
         {rooms.length > 0 ? (
-          <div className="dashboard-grid" aria-label="Room status list">
+          <div className="dashboard-grid" aria-label={t("dashboard.listLabel")}>
             {rooms.map((room) => {
               const now = new Date();
-              const status = getRoomStatus(room, bookings, now);
+              const status = getRoomStatus(room, bookings, now, businessTimeZone);
               const upcomingBookings = upcomingRoomBookings(room.id, bookings, now);
               const isExpanded = expandedRoomIds.has(room.id);
               const visibleUpcomingBookings = isExpanded
@@ -159,7 +208,7 @@ export function AdminDashboardPage() {
                 <div className="metric-row">
                   <span>{t("dashboard.today", { count: status.todayBookings.length })}</span>
                   <span>{t("dashboard.pending", { count: status.pendingCount })}</span>
-                  {status.next ? <span>{formatTime(status.next.startTime)} · {t("bookings.timeZoneLabel")}</span> : null}
+                  {status.next ? <span>{formatTime(status.next.startTime, businessTimeZone)} · {timeZoneLabel}</span> : null}
                 </div>
                 <section className="dashboard-upcoming" aria-label={`${room.name} upcoming bookings`}>
                   <div className="dashboard-upcoming__header">
@@ -190,8 +239,8 @@ export function AdminDashboardPage() {
                         <li className="dashboard-upcoming__item" key={booking.id}>
                           <strong>{booking.title}</strong>
                           <span>
-                            {formatDateTimeRange(booking.startTime, booking.endTime, dateLocale)} ·{" "}
-                            {t("bookings.timeZoneLabel")}
+                            {formatDateTimeRange(booking.startTime, booking.endTime, dateLocale, businessTimeZone)} ·{" "}
+                            {timeZoneLabel}
                           </span>
                           <span>
                             {booking.contactName} · {t(`status.${booking.status}`)}

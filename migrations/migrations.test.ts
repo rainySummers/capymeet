@@ -40,4 +40,19 @@ describe("database migrations", () => {
     expect(initialMigration).not.toContain("email_settings");
     expect(followUpMigrations).toContain("CREATE TABLE email_settings");
   });
+
+  it("adds business settings outside the initial schema", () => {
+    const migrationFiles = readdirSync(migrationsDir)
+      .filter((file) => /^\d+_.+\.sql$/.test(file))
+      .sort();
+
+    const initialMigration = readMigration("0001_initial.sql");
+    const followUpMigrations = migrationFiles
+      .filter((file) => file !== "0001_initial.sql")
+      .map(readMigration)
+      .join("\n");
+
+    expect(initialMigration).not.toContain("business_settings");
+    expect(followUpMigrations).toContain("CREATE TABLE business_settings");
+  });
 });

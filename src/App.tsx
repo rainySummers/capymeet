@@ -13,6 +13,7 @@ import { CancellationPage } from "./client/pages/CancellationPage";
 import { PublicBookingPage } from "./client/pages/PublicBookingPage";
 import { TabletPage } from "./client/pages/TabletPage";
 import { AdminI18nProvider } from "./client/i18n/adminI18n";
+import { PublicI18nProvider } from "./client/i18n/publicI18n";
 import { getAdminToken } from "./client/api";
 
 export function App() {
@@ -21,6 +22,10 @@ export function App() {
 
   function adminPage(page: ReactNode) {
     return <AdminI18nProvider>{page}</AdminI18nProvider>;
+  }
+
+  function publicPage(page: ReactNode) {
+    return <PublicI18nProvider>{page}</PublicI18nProvider>;
   }
 
   if (path.startsWith("/admin/login")) {
@@ -65,16 +70,16 @@ export function App() {
   }
 
   if (path.startsWith("/pad/")) {
-    return <TabletPage deviceCode={path.split("/")[2]} />;
+    return publicPage(<TabletPage deviceCode={path.split("/")[2]} />);
   }
 
   if (path.startsWith("/cancel")) {
-    return <CancellationPage />;
+    return publicPage(<CancellationPage />);
   }
 
   if (path.startsWith("/book/")) {
-    return <PublicBookingPage linkToken={path.split("/")[2]} />;
+    return publicPage(<PublicBookingPage linkToken={path.split("/")[2]} />);
   }
 
-  return <PublicBookingPage initialRoomId={searchParams.get("roomId") ?? ""} />;
+  return publicPage(<PublicBookingPage initialRoomId={searchParams.get("roomId") ?? ""} />);
 }

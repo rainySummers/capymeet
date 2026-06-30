@@ -103,7 +103,7 @@ export function AdminDevicesPage() {
 
         {message ? <p className="form-message">{message}</p> : null}
 
-        <div className="admin-list" aria-label="Devices list">
+        <div className="admin-list" aria-label={t("devices.listLabel")}>
           {devices.map((device) => (
             <article className="list-row list-row--stacked" key={device.id}>
               <div className="list-row__content">

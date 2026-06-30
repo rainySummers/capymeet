@@ -2,14 +2,17 @@ import { useEffect, useMemo, useState } from "react";
 
 import type { Room } from "../../shared/types";
 import {
-  BUSINESS_TIME_ZONE_LABEL,
+  BUSINESS_TIME_ZONE,
   formatBusinessTimeRange,
+  formatBusinessTimeZoneLabel,
   getZonedDateString,
   getZonedMinutesSinceMidnight,
   minutesBetween,
   zonedDateTimeToUtc,
 } from "../../shared/time";
 import { api, ApiError, type PublicRoomBooking } from "../api";
+import { loadPublicBusinessTimeZone } from "../businessTimeZone";
+import { PublicLanguageToggle, usePublicI18n, type PublicLanguage } from "../i18n/publicI18n";
 
 type SubmitState =
   | { kind: "idle" }
@@ -17,22 +20,19 @@ type SubmitState =
   | { kind: "success"; message: string }
   | { kind: "error"; message: string };
 
-const bookingErrorMessages: Record<string, string> = {
-  booking_conflict: "This time is already occupied by an existing booking.",
-  invalid_time_range: "End time must be after start time.",
-  outside_opening_hours: "Booking date must be within this room's opening dates.",
-  booking_too_far_in_advance: "Booking is too far in advance for this room.",
-  duration_too_short: "Booking is shorter than the minimum duration.",
-  duration_too_long: "Booking is longer than the maximum duration.",
-  room_disabled: "This room is not available for booking.",
-  slot_interval_invalid: "Start and end times must match this room's booking interval.",
+type Translate = (key: string, values?: Record<string, string | number>) => string;
+
+const bookingErrorKeys: Record<string, string> = {
+  booking_conflict: "booking.error.booking_conflict",
+  invalid_time_range: "booking.error.invalid_time_range",
+  outside_opening_hours: "booking.error.outside_opening_hours",
+  booking_too_far_in_advance: "booking.error.booking_too_far_in_advance",
+  duration_too_short: "booking.error.duration_too_short",
+  duration_too_long: "booking.error.duration_too_long",
+  room_disabled: "booking.error.room_disabled",
+  slot_interval_invalid: "booking.error.slot_interval_invalid",
 };
 
-const selectedConflictMessage = "Selected time is already occupied by an existing booking.";
-const selectedBufferConflictMessage = "Selected time is too close to an existing booking buffer.";
-const outOfOpeningDatesMessage = "Booking date must be within this room's opening dates.";
-const outOfOpeningTimeMessage = "Booking time must be within this room's opening time range.";
-const invalidEmailMessage = "Please enter a valid email address.";
 const bookingAvailabilityStartTime = "09:00";
 const bookingAvailabilityEndTime = "17:00";
 const bookingTimeSlotMinutes = 30;
@@ -48,9 +48,9 @@ function parseTimeToMinutes(time: string): number | null {
   return hour * 60 + minute;
 }
 
-function localDateAndTimeToIso(date: string, time: string): string | null {
+function localDateAndTimeToIso(date: string, time: string, timeZone: string): string | null {
   try {
-    return zonedDateTimeToUtc(date, time).toISOString();
+    return zonedDateTimeToUtc(date, time, timeZone).toISOString();
   } catch {
     return null;
   }
@@ -104,56 +104,90 @@ function isDateWithinOpeningRange(date: string, range: OpeningSchedule | null): 
   return !range || (date >= range.startDate && date <= range.endDate);
 }
 
-function formatBookingTime(startTime: string, endTime: string): string {
-  return formatBusinessTimeRange(startTime, endTime);
+function formatBookingTime(startTime: string, endTime: string, timeZone: string): string {
+  return formatBusinessTimeRange(startTime, endTime, timeZone);
 }
 
-function formatOpeningDate(date: string): string {
+function bookingErrorMessage(t: Translate, errorCode: string): string {
+  return t(bookingErrorKeys[errorCode] ?? "booking.error.failed");
+}
+
+function formatOpeningDate(date: string, language: PublicLanguage): string {
   const parsed = new Date(`${date}T00:00:00.000Z`);
-  return new Intl.DateTimeFormat("en-US", { month: "long", day: "numeric", timeZone: "UTC" }).format(parsed);
+  return new Intl.DateTimeFormat(language === "zh" ? "zh-CN" : "en-US", {
+    month: "long",
+    day: "numeric",
+    timeZone: "UTC",
+  }).format(parsed);
 }
 
-function formatOpeningHours(openingHours: string): string | null {
+function formatOpeningHours(
+  openingHours: string,
+  language: PublicLanguage,
+  t: Translate,
+  timeZoneLabel: string,
+): string | null {
   const range = parseOpeningSchedule(openingHours);
   if (!range) {
     return null;
   }
-  return `Bookings are available from ${formatOpeningDate(range.startDate)} to ${formatOpeningDate(range.endDate)}, from ${range.start} to ${range.end} (${BUSINESS_TIME_ZONE_LABEL}).`;
+  return t("booking.openingHours", {
+    startDate: formatOpeningDate(range.startDate, language),
+    endDate: formatOpeningDate(range.endDate, language),
+    start: range.start,
+    end: range.end,
+    timeZone: timeZoneLabel,
+  });
 }
 
 function isPositiveInteger(value: unknown): value is number {
   return Number.isInteger(value) && (value as number) > 0;
 }
 
-function formatCount(value: number, singular: string, plural: string): string {
-  return `${value} ${value === 1 ? singular : plural}`;
+function formatCount(value: number, unit: "day" | "minute", language: PublicLanguage): string {
+  if (language === "zh") {
+    return `${value} ${unit === "day" ? "天" : "分钟"}`;
+  }
+  const label = unit === "day"
+    ? value === 1 ? "day" : "days"
+    : value === 1 ? "minute" : "minutes";
+  return `${value} ${label}`;
 }
 
-function formatBookingGuidance(room: Room | null): string {
-  const sentences = [`Times are shown and submitted as ${BUSINESS_TIME_ZONE_LABEL}.`];
+function formatBookingGuidance(
+  room: Room | null,
+  language: PublicLanguage,
+  t: Translate,
+  timeZoneLabel: string,
+): string {
+  const sentences = [t("booking.guidance.timeZone", { timeZone: timeZoneLabel })];
 
   if (!room) {
-    sentences.push("Select a room to view booking limits.");
+    sentences.push(t("booking.guidance.selectRoom"));
     return sentences.join(" ");
   }
 
   if (isPositiveInteger(room.minDurationMinutes)) {
-    sentences.push(`Minimum booking duration is ${formatCount(room.minDurationMinutes, "minute", "minutes")}.`);
+    sentences.push(t("booking.guidance.minDuration", {
+      duration: formatCount(room.minDurationMinutes, "minute", language),
+    }));
   }
   if (isPositiveInteger(room.maxDurationMinutes)) {
-    sentences.push(`Maximum meeting duration is ${formatCount(room.maxDurationMinutes, "minute", "minutes")}.`);
+    sentences.push(t("booking.guidance.maxDuration", {
+      duration: formatCount(room.maxDurationMinutes, "minute", language),
+    }));
   }
   if (isPositiveInteger(room.maxAdvanceDays)) {
-    sentences.push(`Bookings can be made up to ${formatCount(room.maxAdvanceDays, "day", "days")} in advance.`);
+    sentences.push(t("booking.guidance.maxAdvance", {
+      duration: formatCount(room.maxAdvanceDays, "day", language),
+    }));
   }
   if (isPositiveInteger(room.bufferMinutes)) {
-    sentences.push(`A ${room.bufferMinutes}-minute buffer between meetings is required.`);
+    sentences.push(t("booking.guidance.buffer", { minutes: room.bufferMinutes }));
   } else if (room.bufferMinutes === 0) {
-    sentences.push("No buffer between meetings is required.");
+    sentences.push(t("booking.guidance.noBuffer"));
   }
-  sentences.push(
-    room.requiresApproval ? "Bookings require administrator approval." : "Bookings are confirmed automatically.",
-  );
+  sentences.push(t(room.requiresApproval ? "booking.guidance.requiresApproval" : "booking.guidance.autoConfirm"));
 
   return sentences.join(" ");
 }
@@ -166,16 +200,18 @@ type PublicBookingPageProps = {
 };
 
 export function PublicBookingPage({ embedded = false, linkToken, initialRoomId = "", onBack }: PublicBookingPageProps) {
+  const { language, t } = usePublicI18n();
+  const [businessTimeZone, setBusinessTimeZone] = useState(BUSINESS_TIME_ZONE);
   const [rooms, setRooms] = useState<Room[]>([]);
   const [selectedRoomId, setSelectedRoomId] = useState(initialRoomId);
-  const [roomsError, setRoomsError] = useState<string | null>(null);
+  const [roomsError, setRoomsError] = useState(false);
   const [submitState, setSubmitState] = useState<SubmitState>({ kind: "idle" });
   const [bookingDate, setBookingDate] = useState("");
   const [startTime, setStartTime] = useState("");
   const [endTime, setEndTime] = useState("");
   const [bookings, setBookings] = useState<PublicRoomBooking[]>([]);
   const [bookingsLoading, setBookingsLoading] = useState(false);
-  const [bookingsError, setBookingsError] = useState<string | null>(null);
+  const [bookingsError, setBookingsError] = useState(false);
   const [emailHasFormatError, setEmailHasFormatError] = useState(false);
   const selectedRoom = useMemo(
     () => rooms.find((room) => room.id === selectedRoomId) ?? null,
@@ -187,6 +223,19 @@ export function PublicBookingPage({ embedded = false, linkToken, initialRoomId =
   );
   const selectedRoomOpeningStartTime = selectedRoomOpeningDateRange?.start ?? bookingAvailabilityStartTime;
   const selectedRoomOpeningEndTime = selectedRoomOpeningDateRange?.end ?? bookingAvailabilityEndTime;
+  const timeZoneLabel = formatBusinessTimeZoneLabel(businessTimeZone, language);
+
+  useEffect(() => {
+    let cancelled = false;
+    loadPublicBusinessTimeZone().then((loadedBusinessTimeZone) => {
+      if (!cancelled) {
+        setBusinessTimeZone(loadedBusinessTimeZone);
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -195,6 +244,7 @@ export function PublicBookingPage({ embedded = false, linkToken, initialRoomId =
       .then((result) => {
         if (!cancelled) {
           setRooms(result.rooms);
+          setRoomsError(false);
           setSelectedRoomId((current) =>
             current && result.rooms.some((room) => room.id === current) ? current : "",
           );
@@ -202,7 +252,7 @@ export function PublicBookingPage({ embedded = false, linkToken, initialRoomId =
       })
       .catch(() => {
         if (!cancelled) {
-          setRoomsError("Could not load rooms.");
+          setRoomsError(true);
         }
       });
     return () => {
@@ -214,7 +264,7 @@ export function PublicBookingPage({ embedded = false, linkToken, initialRoomId =
     let cancelled = false;
     if (!selectedRoomId || !bookingDate || !isDateWithinOpeningRange(bookingDate, selectedRoomOpeningDateRange)) {
       setBookings([]);
-      setBookingsError(null);
+      setBookingsError(false);
       setBookingsLoading(false);
       return () => {
         cancelled = true;
@@ -222,10 +272,10 @@ export function PublicBookingPage({ embedded = false, linkToken, initialRoomId =
     }
 
     setBookingsLoading(true);
-    setBookingsError(null);
+    setBookingsError(false);
     setBookings([]);
     api
-      .listPublicBookings(selectedRoomId, bookingDate)
+      .listPublicBookings(selectedRoomId, bookingDate, businessTimeZone)
       .then((result) => {
         if (!cancelled) {
           setBookings(result.bookings);
@@ -234,7 +284,7 @@ export function PublicBookingPage({ embedded = false, linkToken, initialRoomId =
       .catch(() => {
         if (!cancelled) {
           setBookings([]);
-          setBookingsError("Could not load bookings.");
+          setBookingsError(true);
         }
       })
       .finally(() => {
@@ -246,7 +296,7 @@ export function PublicBookingPage({ embedded = false, linkToken, initialRoomId =
     return () => {
       cancelled = true;
     };
-  }, [selectedRoomId, bookingDate, selectedRoomOpeningDateRange]);
+  }, [selectedRoomId, bookingDate, selectedRoomOpeningDateRange, businessTimeZone]);
 
   useEffect(() => {
     if (bookingDate && !isDateWithinOpeningRange(bookingDate, selectedRoomOpeningDateRange)) {
@@ -256,8 +306,12 @@ export function PublicBookingPage({ embedded = false, linkToken, initialRoomId =
     }
   }, [bookingDate, selectedRoomOpeningDateRange]);
 
-  const selectedStartIso = bookingDate && startTime ? localDateAndTimeToIso(bookingDate, startTime) : null;
-  const selectedEndIso = bookingDate && endTime ? localDateAndTimeToIso(bookingDate, endTime) : null;
+  const selectedStartIso = bookingDate && startTime
+    ? localDateAndTimeToIso(bookingDate, startTime, businessTimeZone)
+    : null;
+  const selectedEndIso = bookingDate && endTime
+    ? localDateAndTimeToIso(bookingDate, endTime, businessTimeZone)
+    : null;
   const selectedTimeValidation = useMemo<SelectedTimeValidation | null>(() => {
     if (!startTime || !endTime || !selectedStartIso || !selectedEndIso) {
       return null;
@@ -269,31 +323,31 @@ export function PublicBookingPage({ embedded = false, linkToken, initialRoomId =
       return null;
     }
     if (new Date(selectedEndIso).getTime() <= new Date(selectedStartIso).getTime()) {
-      return { message: bookingErrorMessages.invalid_time_range, conflictingBookingIds: new Set<string>() };
+      return { message: bookingErrorMessage(t, "invalid_time_range"), conflictingBookingIds: new Set<string>() };
     }
 
-    const selectedStartDate = getZonedDateString(selectedStartIso);
-    const selectedEndDate = getZonedDateString(selectedEndIso);
+    const selectedStartDate = getZonedDateString(selectedStartIso, businessTimeZone);
+    const selectedEndDate = getZonedDateString(selectedEndIso, businessTimeZone);
     if (
       selectedStartDate !== selectedEndDate ||
       !isDateWithinOpeningRange(selectedStartDate, selectedRoomOpeningDateRange) ||
       !isDateWithinOpeningRange(selectedEndDate, selectedRoomOpeningDateRange)
     ) {
-      return { message: outOfOpeningDatesMessage, conflictingBookingIds: new Set<string>() };
+      return { message: bookingErrorMessage(t, "outside_opening_hours"), conflictingBookingIds: new Set<string>() };
     }
 
-    const selectedStartMinutes = getZonedMinutesSinceMidnight(selectedStartIso);
-    const selectedEndMinutes = getZonedMinutesSinceMidnight(selectedEndIso);
+    const selectedStartMinutes = getZonedMinutesSinceMidnight(selectedStartIso, businessTimeZone);
+    const selectedEndMinutes = getZonedMinutesSinceMidnight(selectedEndIso, businessTimeZone);
     if (selectedStartMinutes < openingStartMinutes || selectedEndMinutes > openingEndMinutes) {
-      return { message: outOfOpeningTimeMessage, conflictingBookingIds: new Set<string>() };
+      return { message: t("booking.error.outOfOpeningTime"), conflictingBookingIds: new Set<string>() };
     }
 
     const duration = minutesBetween(selectedStartIso, selectedEndIso);
     if (duration < (selectedRoom?.minDurationMinutes ?? 1)) {
-      return { message: bookingErrorMessages.duration_too_short, conflictingBookingIds: new Set<string>() };
+      return { message: bookingErrorMessage(t, "duration_too_short"), conflictingBookingIds: new Set<string>() };
     }
     if (duration > (selectedRoom?.maxDurationMinutes ?? 24 * 60)) {
-      return { message: bookingErrorMessages.duration_too_long, conflictingBookingIds: new Set<string>() };
+      return { message: bookingErrorMessage(t, "duration_too_long"), conflictingBookingIds: new Set<string>() };
     }
 
     const directConflictIds = new Set(
@@ -302,7 +356,7 @@ export function PublicBookingPage({ embedded = false, linkToken, initialRoomId =
         .map((booking) => booking.id),
     );
     if (directConflictIds.size > 0) {
-      return { message: selectedConflictMessage, conflictingBookingIds: directConflictIds };
+      return { message: t("booking.error.selectedConflict"), conflictingBookingIds: directConflictIds };
     }
 
     const bufferMinutes = Number.isInteger(selectedRoom?.bufferMinutes) && (selectedRoom?.bufferMinutes ?? 0) > 0
@@ -321,7 +375,7 @@ export function PublicBookingPage({ embedded = false, linkToken, initialRoomId =
         .map((booking) => booking.id),
     );
     if (bufferConflictIds.size > 0) {
-      return { message: selectedBufferConflictMessage, conflictingBookingIds: bufferConflictIds };
+      return { message: t("booking.error.selectedBufferConflict"), conflictingBookingIds: bufferConflictIds };
     }
 
     return null;
@@ -336,6 +390,8 @@ export function PublicBookingPage({ embedded = false, linkToken, initialRoomId =
     selectedRoomOpeningStartTime,
     selectedStartIso,
     startTime,
+    businessTimeZone,
+    t,
   ]);
   const conflictingBookingIds = selectedTimeValidation?.conflictingBookingIds ?? new Set<string>();
   const hasSelectedTimeError = selectedTimeValidation !== null;
@@ -352,24 +408,24 @@ export function PublicBookingPage({ embedded = false, linkToken, initialRoomId =
 
     if (!roomId || !title || !contactName || !email || !bookingDate || !startTime || !endTime) {
       setEmailHasFormatError(false);
-      setSubmitState({ kind: "error", message: "Please fill in all required fields." });
+      setSubmitState({ kind: "error", message: t("booking.error.fillRequired") });
       return;
     }
     if (!isValidEmailFormat(email)) {
       setEmailHasFormatError(true);
-      setSubmitState({ kind: "error", message: invalidEmailMessage });
+      setSubmitState({ kind: "error", message: t("booking.error.invalidEmail") });
       return;
     }
     setEmailHasFormatError(false);
     if (!isDateWithinOpeningRange(bookingDate, selectedRoomOpeningDateRange)) {
-      setSubmitState({ kind: "error", message: outOfOpeningDatesMessage });
+      setSubmitState({ kind: "error", message: bookingErrorMessage(t, "outside_opening_hours") });
       return;
     }
 
-    const startIso = localDateAndTimeToIso(bookingDate, startTime);
-    const endIso = localDateAndTimeToIso(bookingDate, endTime);
+    const startIso = localDateAndTimeToIso(bookingDate, startTime, businessTimeZone);
+    const endIso = localDateAndTimeToIso(bookingDate, endTime, businessTimeZone);
     if (!startIso || !endIso) {
-      setSubmitState({ kind: "error", message: bookingErrorMessages.invalid_time_range });
+      setSubmitState({ kind: "error", message: bookingErrorMessage(t, "invalid_time_range") });
       return;
     }
     if (selectedTimeValidation) {
@@ -391,21 +447,21 @@ export function PublicBookingPage({ embedded = false, linkToken, initialRoomId =
 
       const message =
         result.status === "confirmed"
-          ? "Booking confirmed. We've reserved the room for you."
-          : "Booking submitted. An administrator will review and confirm shortly.";
+          ? t("booking.success.confirmed")
+          : t("booking.success.pending");
       setSubmitState({ kind: "success", message });
       formEl.reset();
       setBookingDate("");
       setStartTime("");
       setEndTime("");
     } catch (error) {
-      if (error instanceof ApiError && error.errorCode && bookingErrorMessages[error.errorCode]) {
+      if (error instanceof ApiError && error.errorCode && bookingErrorKeys[error.errorCode]) {
         setSubmitState({
           kind: "error",
-          message: bookingErrorMessages[error.errorCode],
+          message: bookingErrorMessage(t, error.errorCode),
         });
       } else {
-        setSubmitState({ kind: "error", message: "Booking failed." });
+        setSubmitState({ kind: "error", message: t("booking.error.failed") });
       }
     }
   }
@@ -414,25 +470,28 @@ export function PublicBookingPage({ embedded = false, linkToken, initialRoomId =
     <main className={embedded ? "embedded-page" : "app-shell"}>
       <header className="page-header">
         <div>
-          <h1>Book a Meeting Room</h1>
+          <h1>{t("booking.title")}</h1>
           {selectedRoom ? (
-            <p>{formatOpeningHours(selectedRoom.openingHours) ?? "Reserve a room by selecting a time and providing your contact details."}</p>
+            <p>{formatOpeningHours(selectedRoom.openingHours, language, t, timeZoneLabel) ?? t("booking.defaultDescription")}</p>
           ) : (
-            <p>Select a room to view opening hours.</p>
+            <p>{t("booking.selectRoomOpening")}</p>
           )}
         </div>
-        {embedded && onBack ? (
-          <button className="button button--secondary" type="button" onClick={onBack}>
-            Back to room status
-          </button>
-        ) : null}
+        <div className="page-header__actions">
+          <PublicLanguageToggle />
+          {embedded && onBack ? (
+            <button className="button button--secondary" type="button" onClick={onBack}>
+              {t("common.backToRoomStatus")}
+            </button>
+          ) : null}
+        </div>
       </header>
 
-      {roomsError ? <p className="form-message form-message--error">{roomsError}</p> : null}
+      {roomsError ? <p className="form-message form-message--error">{t("booking.error.loadRooms")}</p> : null}
 
       <form className="booking-form" onSubmit={handleSubmit} noValidate>
         <div className="form-row">
-          <label htmlFor="roomId">Room *</label>
+          <label htmlFor="roomId">{t("booking.room")}</label>
           <select
             id="roomId"
             name="roomId"
@@ -446,7 +505,7 @@ export function PublicBookingPage({ embedded = false, linkToken, initialRoomId =
             }}
           >
             <option value="" disabled>
-              Select a room
+              {t("booking.selectRoom")}
             </option>
             {rooms.map((room) => (
               <option key={room.id} value={room.id}>
@@ -458,17 +517,17 @@ export function PublicBookingPage({ embedded = false, linkToken, initialRoomId =
         </div>
 
         <div className="form-row">
-          <label htmlFor="title">Meeting title *</label>
+          <label htmlFor="title">{t("booking.meetingTitle")}</label>
           <input id="title" name="title" type="text" maxLength={120} required />
         </div>
 
         <div className="form-row">
-          <label htmlFor="contactName">Contact name *</label>
+          <label htmlFor="contactName">{t("booking.contactName")}</label>
           <input id="contactName" name="contactName" type="text" maxLength={80} required />
         </div>
 
         <div className="form-row">
-          <label htmlFor="email">Email *</label>
+          <label htmlFor="email">{t("booking.email")}</label>
           <input
             id="email"
             name="email"
@@ -485,7 +544,7 @@ export function PublicBookingPage({ embedded = false, linkToken, initialRoomId =
         </div>
 
         <div className="form-row">
-          <label htmlFor="bookingDate">Booking date *</label>
+          <label htmlFor="bookingDate">{t("booking.date")}</label>
           <input
             id="bookingDate"
             name="bookingDate"
@@ -501,11 +560,11 @@ export function PublicBookingPage({ embedded = false, linkToken, initialRoomId =
               setSubmitState({ kind: "idle" });
             }}
           />
-          <p className="form-hint">{formatBookingGuidance(selectedRoom)}</p>
+          <p className="form-hint">{formatBookingGuidance(selectedRoom, language, t, timeZoneLabel)}</p>
         </div>
 
         <div className="form-row">
-          <label htmlFor="startTime">Start time *</label>
+          <label htmlFor="startTime">{t("booking.start")}</label>
           <input
             className={`booking-time-input${hasSelectedTimeError ? " input--conflict" : ""}`}
             id="startTime"
@@ -523,7 +582,7 @@ export function PublicBookingPage({ embedded = false, linkToken, initialRoomId =
         </div>
 
         <div className="form-row">
-          <label htmlFor="endTime">End time *</label>
+          <label htmlFor="endTime">{t("booking.end")}</label>
           <input
             className={`booking-time-input${hasSelectedTimeError ? " input--conflict" : ""}`}
             id="endTime"
@@ -548,17 +607,17 @@ export function PublicBookingPage({ embedded = false, linkToken, initialRoomId =
 
         <section className="room-schedule" aria-live="polite">
           <div className="room-schedule__header">
-            <h2>Current room bookings</h2>
-            <span>{bookingDate ? `${bookingDate} · ${BUSINESS_TIME_ZONE_LABEL}` : "Select a date"}</span>
+            <h2>{t("booking.schedule.title")}</h2>
+            <span>{bookingDate ? `${bookingDate} · ${timeZoneLabel}` : t("booking.schedule.selectDate")}</span>
           </div>
           {!selectedRoomId || !bookingDate ? (
-            <p className="room-schedule__empty">Select a room and date to view existing bookings.</p>
+            <p className="room-schedule__empty">{t("booking.schedule.emptyPrompt")}</p>
           ) : bookingsLoading ? (
-            <p className="room-schedule__empty">Loading bookings...</p>
+            <p className="room-schedule__empty">{t("booking.schedule.loading")}</p>
           ) : bookingsError ? (
-            <p className="room-schedule__empty room-schedule__empty--error">{bookingsError}</p>
+            <p className="room-schedule__empty room-schedule__empty--error">{t("booking.error.loadBookings")}</p>
           ) : bookings.length === 0 ? (
-            <p className="room-schedule__empty">No bookings for this date.</p>
+            <p className="room-schedule__empty">{t("booking.schedule.empty")}</p>
           ) : (
             <ul className="room-schedule__list">
               {bookings.map((booking, index) => {
@@ -568,10 +627,10 @@ export function PublicBookingPage({ embedded = false, linkToken, initialRoomId =
                     className={`room-schedule__item${isConflict ? " room-schedule__item--conflict" : ""}`}
                     key={booking.id}
                   >
-                    <strong>{`meeting${index + 1}`}</strong>
+                    <strong>{t("booking.schedule.itemTitle", { count: index + 1 })}</strong>
                     <span>
-                      {formatBookingTime(booking.startTime, booking.endTime)} ·{" "}
-                      {booking.status === "pending_approval" ? "Pending approval" : "Confirmed"}
+                      {formatBookingTime(booking.startTime, booking.endTime, businessTimeZone)} ·{" "}
+                      {booking.status === "pending_approval" ? t("status.pending_approval") : t("status.confirmed")}
                     </span>
                   </li>
                 );
@@ -582,7 +641,7 @@ export function PublicBookingPage({ embedded = false, linkToken, initialRoomId =
 
         <div className="form-actions">
           <button type="submit" disabled={submitState.kind === "submitting"}>
-            {submitState.kind === "submitting" ? "Submitting..." : "Book room"}
+            {submitState.kind === "submitting" ? t("booking.submit.loading") : t("booking.submit.idle")}
           </button>
         </div>
 
@@ -600,7 +659,7 @@ export function PublicBookingPage({ embedded = false, linkToken, initialRoomId =
 
       {!embedded ? (
         <p className="page-footnote">
-          If you need to cancel or change a meeting, contact your meeting room administrator.
+          {t("booking.footnote")}
         </p>
       ) : null}
     </main>

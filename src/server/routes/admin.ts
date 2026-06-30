@@ -20,6 +20,7 @@ import {
   rejectPendingBooking,
 } from "../repositories/bookingsRepository";
 import { createDevice, deleteDevice, listDevices, updateDevice } from "../repositories/devicesRepository";
+import { getBusinessSettings, saveBusinessSettings } from "../repositories/businessSettingsRepository";
 import { getEmailSettings, saveEmailSettings } from "../repositories/emailSettingsRepository";
 import { writeAuditLog } from "../repositories/auditLogsRepository";
 import { listAllRooms } from "../repositories/roomsRepository";
@@ -27,6 +28,7 @@ import { createRoom, deleteRoom, updateRoom } from "../repositories/roomsReposit
 import { JwtSecretError, createAdminToken, verifyAdminToken, verifyPassword } from "../services/authService";
 import { nowIso } from "../db";
 import { createBookingSchema } from "../../shared/validation";
+import { isValidTimeZone } from "../../shared/time";
 import { buildApprovedBookingEmailText, buildBookingEmailText, isEmailProviderConfigured, sendOptionalEmail } from "../services/emailService";
 import { createBooking } from "../services/bookingService";
 import { createQrCodeDataUrl } from "../services/qrCodeService";
@@ -104,6 +106,10 @@ const emailSettingsSchema = z.object({
   isEmailEnabled: z.boolean(),
   emailSubject: z.string().min(1).max(160),
   replyInstructions: z.string().min(1).max(1000),
+});
+
+const businessSettingsSchema = z.object({
+  businessTimeZone: z.string().refine(isValidTimeZone),
 });
 
 const testEmailSchema = z.object({
@@ -244,6 +250,21 @@ adminRoutes.get("/devices", async (c) => {
   return c.json({ devices: await listDevices(c.env.DB) });
 });
 
+adminRoutes.get("/business-settings", async (c) => {
+  return c.json({ settings: await getBusinessSettings(c.env.DB) });
+});
+
+adminRoutes.put("/business-settings", zValidator("json", businessSettingsSchema), async (c) => {
+  const settings = await saveBusinessSettings(c.env.DB, {
+    ...c.req.valid("json"),
+    adminId: c.get("adminId"),
+  });
+  await audit(c.env.DB, c.get("adminId"), "update_business_settings", "business_settings", "default", {
+    businessTimeZone: settings.businessTimeZone,
+  });
+  return c.json({ settings });
+});
+
 adminRoutes.post("/devices", zValidator("json", deviceSchema), async (c) => {
   const body = c.req.valid("json");
   const device = await createDevice(c.env.DB, {
@@ -306,7 +327,10 @@ adminRoutes.put("/email-settings", zValidator("json", emailSettingsSchema), asyn
 
 adminRoutes.post("/email-settings/test", zValidator("json", testEmailSchema), async (c) => {
   const { to } = c.req.valid("json");
-  const settings = await getEmailSettings(c.env.DB);
+  const [settings, businessSettings] = await Promise.all([
+    getEmailSettings(c.env.DB),
+    getBusinessSettings(c.env.DB),
+  ]);
   const result = await sendOptionalEmail(
     {
       event: "booking_confirmed",
@@ -320,6 +344,7 @@ adminRoutes.post("/email-settings/test", zValidator("json", testEmailSchema), as
         startTime: new Date().toISOString(),
         endTime: new Date(Date.now() + 30 * 60 * 1000).toISOString(),
         replyInstructions: settings.replyInstructions,
+        businessTimeZone: businessSettings.businessTimeZone,
       }),
     },
     c.env,
@@ -385,11 +410,13 @@ adminRoutes.get("/bookings", zValidator("query", bookingListQuerySchema), async 
 
 adminRoutes.post("/bookings", zValidator("json", adminCreateBookingSchema), async (c) => {
   const body = c.req.valid("json");
+  const { businessTimeZone } = await getBusinessSettings(c.env.DB);
   const result = await createBooking(c.env.DB, {
     ...body,
     email: body.email ?? null,
     source: "admin",
     forceConfirmed: true,
+    businessTimeZone,
   });
 
   if (!result.ok) {
@@ -438,7 +465,10 @@ adminRoutes.post("/approvals/:id/approve", async (c) => {
 
   const booking = await getAdminBookingById(c.env.DB, bookingId);
   if (booking?.email) {
-    const settings = await getEmailSettings(c.env.DB);
+    const [settings, businessSettings] = await Promise.all([
+      getEmailSettings(c.env.DB),
+      getBusinessSettings(c.env.DB),
+    ]);
     if (!settings.isEmailEnabled) {
       await audit(c.env.DB, c.get("adminId"), "approve_booking", "booking", bookingId);
       return c.json({ ok: true });
@@ -455,6 +485,7 @@ adminRoutes.post("/approvals/:id/approve", async (c) => {
           startTime: booking.startTime,
           endTime: booking.endTime,
           replyInstructions: settings.replyInstructions,
+          businessTimeZone: businessSettings.businessTimeZone,
         }),
       },
       c.env,

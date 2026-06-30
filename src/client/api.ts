@@ -107,6 +107,14 @@ export interface EmailSettingsPayload {
   replyInstructions: string;
 }
 
+export interface BusinessSettings {
+  businessTimeZone: string;
+}
+
+export interface BusinessSettingsPayload {
+  businessTimeZone: string;
+}
+
 export interface TestEmailResult {
   ok: boolean;
   reason?: string;
@@ -165,6 +173,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export const api = {
+  getSettings: () => request<{ settings: BusinessSettings }>("/api/public/settings"),
   listRooms: () => request<{ rooms: Room[] }>("/api/public/rooms"),
   getBookingLink: (token: string) => request<PublicBookingLinkResponse>(`/api/public/links/${token}`),
   createBooking: (body: {
@@ -304,6 +313,12 @@ export const adminApi = {
     });
     return (await response.json()) as TestEmailResult;
   },
+  getBusinessSettings: () => adminRequest<{ settings: BusinessSettings }>("/api/admin/business-settings"),
+  updateBusinessSettings: (body: BusinessSettingsPayload) =>
+    adminRequest<{ settings: BusinessSettings }>("/api/admin/business-settings", {
+      method: "PUT",
+      body: JSON.stringify(body),
+    }),
   listAdmins: () => adminRequest<{ admins: AdminAccount[] }>("/api/admin/admins"),
   createAdmin: (body: AdminPayload) =>
     adminRequest<{ admin: AdminAccount }>("/api/admin/admins", { method: "POST", body: JSON.stringify(body) }),

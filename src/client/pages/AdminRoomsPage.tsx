@@ -4,7 +4,9 @@ import type { Room } from "../../shared/types";
 import { AdminDrawer } from "../components/AdminDrawer";
 import { AdminNav } from "../components/AdminNav";
 import { ApiError, adminApi, type RoomPayload } from "../api";
+import { loadAdminBusinessTimeZone } from "../businessTimeZone";
 import { useAdminI18n } from "../i18n/adminI18n";
+import { BUSINESS_TIME_ZONE, formatBusinessTimeZoneLabel } from "../../shared/time";
 
 const defaultOpeningHours = '{"startDate":"","endDate":"","start":"09:00","end":"17:00"}';
 const defaultOpeningHoursValue = { startDate: "", endDate: "", start: "09:00", end: "17:00" };
@@ -44,17 +46,23 @@ function roomToPayload(room?: Room): RoomPayload {
 }
 
 export function AdminRoomsPage() {
-  const { t } = useAdminI18n();
+  const { t, language } = useAdminI18n();
   const [rooms, setRooms] = useState<Room[]>([]);
+  const [businessTimeZone, setBusinessTimeZone] = useState(BUSINESS_TIME_ZONE);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState<RoomPayload>(() => roomToPayload());
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [message, setMessage] = useState("");
   const openingHours = parseOpeningHours(form.openingHours);
+  const timeZoneLabel = formatBusinessTimeZoneLabel(businessTimeZone, language);
 
   async function load() {
-    const data = await adminApi.listRooms();
+    const [data, loadedBusinessTimeZone] = await Promise.all([
+      adminApi.listRooms(),
+      loadAdminBusinessTimeZone(),
+    ]);
     setRooms(data.rooms);
+    setBusinessTimeZone(loadedBusinessTimeZone);
   }
 
   useEffect(() => {
@@ -130,7 +138,7 @@ export function AdminRoomsPage() {
 
         {message ? <p className="form-message">{message}</p> : null}
 
-        <div className="admin-list" aria-label="Rooms list">
+        <div className="admin-list" aria-label={t("rooms.listLabel")}>
           {rooms.map((room) => (
             <article className="list-row" key={room.id}>
               <div className="list-row__content">
@@ -254,7 +262,7 @@ export function AdminRoomsPage() {
                 }
                 required
               />
-              <p className="form-hint">{t("rooms.timeZoneHint")}</p>
+              <p className="form-hint">{t("rooms.timeZoneHint", { timeZone: timeZoneLabel })}</p>
             </div>
             <div className="form-row">
               <label htmlFor="room-opening-end-date">{t("rooms.openingEnd")}</label>
@@ -286,7 +294,7 @@ export function AdminRoomsPage() {
                 }
                 required
               />
-              <p className="form-hint">{t("rooms.timeZoneHint")}</p>
+              <p className="form-hint">{t("rooms.timeZoneHint", { timeZone: timeZoneLabel })}</p>
             </div>
             <div className="form-row">
               <label htmlFor="room-opening-end-time">{t("rooms.openingEndTime")}</label>

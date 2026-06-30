@@ -6,6 +6,7 @@ import { AdminLanguageToggle, useAdminI18n } from "../i18n/adminI18n";
 export function AdminLoginPage() {
   const { t } = useAdminI18n();
   const [error, setError] = useState("");
+  const [showDemoWarning, setShowDemoWarning] = useState(true);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -38,6 +39,25 @@ export function AdminLoginPage() {
 
   return (
     <main className="app-shell">
+      {showDemoWarning ? (
+        <div className="demo-warning-backdrop">
+          <section
+            aria-labelledby="demo-warning-title"
+            aria-modal="true"
+            className="demo-warning-dialog"
+            role="dialog"
+          >
+            <h2 id="demo-warning-title">{t("login.demoWarningTitle")}</h2>
+            <p className="demo-warning-body">{t("login.demoWarningBody")}</p>
+            <div className="demo-warning-actions">
+              <button type="button" onClick={() => setShowDemoWarning(false)}>
+                {t("login.demoWarningDismiss")}
+              </button>
+            </div>
+          </section>
+        </div>
+      ) : null}
+
       <section className="booking-form admin-login-card">
         <header className="page-header">
           <div>

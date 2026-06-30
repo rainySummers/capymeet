@@ -5,11 +5,14 @@ import { AdminNav } from "../components/AdminNav";
 import { ApiError, adminApi, type AdminBooking, type AdminBookingPayload } from "../api";
 import type { BookingStatus, Room } from "../../shared/types";
 import {
+  BUSINESS_TIME_ZONE,
   formatBusinessDate,
   formatBusinessDateTime,
   formatBusinessTime,
+  formatBusinessTimeZoneLabel,
   zonedDateTimeInputToUtcIso,
 } from "../../shared/time";
+import { loadAdminBusinessTimeZone } from "../businessTimeZone";
 import { useAdminI18n } from "../i18n/adminI18n";
 
 type LoadState = "loading" | "loaded" | "error";
@@ -24,8 +27,8 @@ const emptyForm: AdminBookingPayload = {
   endTime: "",
 };
 
-export function localDateTimeToIso(value: string): string {
-  return zonedDateTimeInputToUtcIso(value);
+export function localDateTimeToIso(value: string, timeZone = BUSINESS_TIME_ZONE): string {
+  return zonedDateTimeInputToUtcIso(value, timeZone);
 }
 
 function createBookingErrorMessage(error: unknown, t: (key: string) => string): string {
@@ -46,16 +49,16 @@ function createBookingErrorMessage(error: unknown, t: (key: string) => string): 
   return t("bookings.createError");
 }
 
-function formatDateTime(value: string): string {
-  return formatBusinessDateTime(value);
+function formatDateTime(value: string, timeZone: string): string {
+  return formatBusinessDateTime(value, "en-US", timeZone);
 }
 
-function formatDate(value: string): string {
-  return formatBusinessDate(value);
+function formatDate(value: string, timeZone: string): string {
+  return formatBusinessDate(value, "en-US", { year: "numeric", month: "short", day: "numeric" }, timeZone);
 }
 
-function formatTime(value: string): string {
-  return formatBusinessTime(value);
+function formatTime(value: string, timeZone: string): string {
+  return formatBusinessTime(value, timeZone);
 }
 
 function bookingStatusClass(status: BookingStatus): string {
@@ -75,9 +78,10 @@ function bookingStatusClass(status: BookingStatus): string {
 }
 
 export function AdminBookingsPage() {
-  const { t } = useAdminI18n();
+  const { t, language } = useAdminI18n();
   const [bookings, setBookings] = useState<AdminBooking[]>([]);
   const [rooms, setRooms] = useState<Room[]>([]);
+  const [businessTimeZone, setBusinessTimeZone] = useState(BUSINESS_TIME_ZONE);
   const [loadState, setLoadState] = useState<LoadState>("loading");
   const [form, setForm] = useState<AdminBookingPayload>(emptyForm);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
@@ -87,6 +91,7 @@ export function AdminBookingsPage() {
   const [sortDirection, setSortDirection] = useState<SortDirection>("asc");
   const [roomFilter, setRoomFilter] = useState("");
   const [message, setMessage] = useState("");
+  const timeZoneLabel = formatBusinessTimeZoneLabel(businessTimeZone, language);
 
   const visibleBookings = useMemo(() => {
     return bookings
@@ -99,9 +104,13 @@ export function AdminBookingsPage() {
 
   async function load() {
     setLoadState("loading");
-    const data = await adminApi.listBookings();
+    const [data, loadedBusinessTimeZone] = await Promise.all([
+      adminApi.listBookings(),
+      loadAdminBusinessTimeZone(),
+    ]);
     setBookings(data.bookings);
     setRooms(data.rooms);
+    setBusinessTimeZone(loadedBusinessTimeZone);
     setLoadState("loaded");
   }
 
@@ -120,8 +129,8 @@ export function AdminBookingsPage() {
       await adminApi.createBooking({
         ...form,
         email: form.email || null,
-        startTime: localDateTimeToIso(form.startTime),
-        endTime: localDateTimeToIso(form.endTime),
+        startTime: localDateTimeToIso(form.startTime, businessTimeZone),
+        endTime: localDateTimeToIso(form.endTime, businessTimeZone),
       });
       setForm(emptyForm);
       setIsDrawerOpen(false);
@@ -239,15 +248,15 @@ export function AdminBookingsPage() {
         ) : null}
 
         {bookings.length > 0 ? (
-          <div className="admin-list" aria-label="Bookings list">
+          <div className="admin-list" aria-label={t("bookings.listLabel")}>
             {visibleBookings.map((booking) => (
               <article className="list-row list-row--stacked" key={booking.id}>
                 <div className="booking-time-card">
                   <span>{t("bookings.meetingTime")}</span>
                   <strong>
-                    {formatTime(booking.startTime)} - {formatTime(booking.endTime)}
+                    {formatTime(booking.startTime, businessTimeZone)} - {formatTime(booking.endTime, businessTimeZone)}
                   </strong>
-                  <small>{formatDate(booking.startTime)} · {t("bookings.timeZoneLabel")}</small>
+                  <small>{formatDate(booking.startTime, businessTimeZone)} · {timeZoneLabel}</small>
                 </div>
                 <div className="booking-room-card">
                   <span>{t("bookings.meetingRoom")}</span>
@@ -257,7 +266,8 @@ export function AdminBookingsPage() {
                 <div className="list-row__content">
                   <strong>{booking.title}</strong>
                   <p>
-                    {formatDateTime(booking.startTime)} - {formatDateTime(booking.endTime)}
+                    {formatDateTime(booking.startTime, businessTimeZone)} -{" "}
+                    {formatDateTime(booking.endTime, businessTimeZone)}
                   </p>
                   <p>
                     {booking.contactName}
@@ -373,7 +383,7 @@ export function AdminBookingsPage() {
                 onChange={(event) => setForm({ ...form, startTime: event.target.value })}
                 required
               />
-              <p className="form-hint">{t("bookings.timeZoneHint")}</p>
+              <p className="form-hint">{t("bookings.timeZoneHint", { timeZone: timeZoneLabel })}</p>
             </div>
             <div className="form-row">
               <label htmlFor="booking-end">{t("bookings.end")}</label>
@@ -384,7 +394,7 @@ export function AdminBookingsPage() {
                 onChange={(event) => setForm({ ...form, endTime: event.target.value })}
                 required
               />
-              <p className="form-hint">{t("bookings.timeZoneHint")}</p>
+              <p className="form-hint">{t("bookings.timeZoneHint", { timeZone: timeZoneLabel })}</p>
             </div>
             <div className="form-actions">
               <button className="button button--primary" type="submit">

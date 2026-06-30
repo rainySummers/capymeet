@@ -125,7 +125,7 @@ export function AdminLinksPage() {
         ) : null}
 
         {links.length > 0 ? (
-          <div className="admin-list" aria-label="Booking links list">
+          <div className="admin-list" aria-label={t("links.listLabel")}>
             {links.map((link) => (
               <article className="list-row list-row--stacked" key={link.id}>
                 <div>
@@ -137,7 +137,7 @@ export function AdminLinksPage() {
                   </p>
                   <code>{link.url}</code>
                 </div>
-                <img className="qr-code" src={link.qrCodeDataUrl} alt={`QR code for ${link.url}`} />
+                <img className="qr-code" src={link.qrCodeDataUrl} alt={t("links.qrAlt", { url: link.url })} />
                 <div className="row-actions">
                   <button className="button button--secondary" type="button" onClick={() => toggle(link)}>
                     {link.isEnabled ? t("links.disable") : t("links.enable")}

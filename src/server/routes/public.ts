@@ -5,11 +5,12 @@ import {
   createBookingSchema,
   publicBookingsQuerySchema,
 } from "../../shared/validation";
-import { BUSINESS_TIME_ZONE, getUtcRangeForZonedDate } from "../../shared/time";
+import { getUtcRangeForZonedDate } from "../../shared/time";
 import type { Env } from "../bindings";
 import {
   listActiveBookingsForRoomRange,
 } from "../repositories/bookingsRepository";
+import { getBusinessSettings } from "../repositories/businessSettingsRepository";
 import { getEnabledBookingLinkByToken } from "../repositories/bookingLinksRepository";
 import { getEmailSettings } from "../repositories/emailSettingsRepository";
 import { getRoomById, listEnabledRooms } from "../repositories/roomsRepository";
@@ -28,6 +29,7 @@ async function sendBookingCreatedEmail(
     roomId: string;
     startTime: string;
     endTime: string;
+    businessTimeZone: string;
   },
 ) {
   if (input.status !== "confirmed") {
@@ -52,6 +54,7 @@ async function sendBookingCreatedEmail(
         roomId: input.roomId,
         startTime: input.startTime,
         endTime: input.endTime,
+        businessTimeZone: input.businessTimeZone,
         replyInstructions: settings.replyInstructions,
       }),
     },
@@ -62,6 +65,11 @@ async function sendBookingCreatedEmail(
 publicRoutes.get("/rooms", async (c) => {
   return c.json({ rooms: await listEnabledRooms(c.env.DB) });
 });
+
+publicRoutes.get("/settings", async (c) => {
+  return c.json({ settings: await getBusinessSettings(c.env.DB) });
+});
+
 publicRoutes.get("/bookings", zValidator("query", publicBookingsQuerySchema), async (c) => {
   const { roomId, date } = c.req.valid("query");
   const room = await getRoomById(c.env.DB, roomId);
@@ -69,7 +77,8 @@ publicRoutes.get("/bookings", zValidator("query", publicBookingsQuerySchema), as
     return c.json({ error: "room_not_found" }, 404);
   }
 
-  const { startTime, endTime } = getUtcRangeForZonedDate(date, BUSINESS_TIME_ZONE);
+  const { businessTimeZone } = await getBusinessSettings(c.env.DB);
+  const { startTime, endTime } = getUtcRangeForZonedDate(date, businessTimeZone);
   const bookings = await listActiveBookingsForRoomRange(c.env.DB, roomId, startTime, endTime);
   return c.json({
     bookings: bookings.map((booking) => ({
@@ -99,9 +108,11 @@ publicRoutes.get("/links/:token", async (c) => {
 
 publicRoutes.post("/bookings", zValidator("json", createBookingSchema), async (c) => {
   const body = c.req.valid("json");
+  const { businessTimeZone } = await getBusinessSettings(c.env.DB);
   const result = await createBooking(c.env.DB, {
     ...body,
     source: "public",
+    businessTimeZone,
   });
 
   if (!result.ok) {
@@ -116,6 +127,7 @@ publicRoutes.post("/bookings", zValidator("json", createBookingSchema), async (c
       roomId: body.roomId,
       startTime: body.startTime,
       endTime: body.endTime,
+      businessTimeZone,
     });
   } catch (error) {
     console.error("email_send_failed", error);
@@ -135,9 +147,11 @@ publicRoutes.post("/links/:token/bookings", zValidator("json", createBookingSche
     return c.json({ error: "booking_link_room_mismatch" }, 400);
   }
 
+  const { businessTimeZone } = await getBusinessSettings(c.env.DB);
   const result = await createBooking(c.env.DB, {
     ...body,
     source: "public",
+    businessTimeZone,
   });
 
   if (!result.ok) {
@@ -152,6 +166,7 @@ publicRoutes.post("/links/:token/bookings", zValidator("json", createBookingSche
       roomId: body.roomId,
       startTime: body.startTime,
       endTime: body.endTime,
+      businessTimeZone,
     });
   } catch (error) {
     console.error("email_send_failed", error);

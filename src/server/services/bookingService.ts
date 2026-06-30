@@ -1,5 +1,6 @@
 import type { Booking, BookingSource, BookingStatus, Room } from "../../shared/types";
 import {
+  BUSINESS_TIME_ZONE,
   getZonedDateString,
   getZonedDay,
   getZonedMinutesSinceMidnight,
@@ -18,6 +19,7 @@ export interface CreateBookingRequest {
   endTime: string;
   source: BookingSource;
   forceConfirmed?: boolean;
+  businessTimeZone?: string;
 }
 
 export type BookingDecision =
@@ -52,7 +54,13 @@ function parseHour(value: string): number | null {
 
 type RoomScheduleDecision = "ok" | "invalid_time_range" | "outside_opening_hours" | "booking_too_far_in_advance";
 
-function fitsRoomSchedule(room: Room, startTime: string, endTime: string, now: string): RoomScheduleDecision {
+function fitsRoomSchedule(
+  room: Room,
+  startTime: string,
+  endTime: string,
+  now: string,
+  businessTimeZone: string,
+): RoomScheduleDecision {
   const start = new Date(startTime);
   const end = new Date(endTime);
   const current = new Date(now);
@@ -86,14 +94,14 @@ function fitsRoomSchedule(room: Room, startTime: string, endTime: string, now: s
         return "outside_opening_hours";
       }
 
-      const startDate = getZonedDateString(start);
-      const endDate = getZonedDateString(end);
+      const startDate = getZonedDateString(start, businessTimeZone);
+      const endDate = getZonedDateString(end, businessTimeZone);
       return (
         startDate === endDate &&
         startDate >= openingHours.startDate &&
         endDate <= openingHours.endDate &&
-        getZonedMinutesSinceMidnight(start) >= open &&
-        getZonedMinutesSinceMidnight(end) <= close
+        getZonedMinutesSinceMidnight(start, businessTimeZone) >= open &&
+        getZonedMinutesSinceMidnight(end, businessTimeZone) <= close
       ) ? "ok" : "outside_opening_hours";
     }
 
@@ -104,13 +112,13 @@ function fitsRoomSchedule(room: Room, startTime: string, endTime: string, now: s
       return "outside_opening_hours";
     }
 
-    const startDay = getZonedDay(start);
-    const endDay = getZonedDay(end);
+    const startDay = getZonedDay(start, businessTimeZone);
+    const endDay = getZonedDay(end, businessTimeZone);
     return (
       startDay === endDay &&
       days.includes(startDay) &&
-      getZonedMinutesSinceMidnight(start) >= open &&
-      getZonedMinutesSinceMidnight(end) <= close
+      getZonedMinutesSinceMidnight(start, businessTimeZone) >= open &&
+      getZonedMinutesSinceMidnight(end, businessTimeZone) <= close
     ) ? "ok" : "outside_opening_hours";
   } catch {
     return "outside_opening_hours";
@@ -144,6 +152,7 @@ export function createBookingDecision(input: {
   request: CreateBookingRequest;
 }): BookingDecision {
   const { room, existingBookings, request } = input;
+  const businessTimeZone = request.businessTimeZone ?? BUSINESS_TIME_ZONE;
 
   if (!room.isEnabled) {
     return { ok: false, error: "room_disabled" };
@@ -159,7 +168,7 @@ export function createBookingDecision(input: {
   if (duration > room.maxDurationMinutes) {
     return { ok: false, error: "duration_too_long" };
   }
-  const scheduleDecision = fitsRoomSchedule(room, request.startTime, request.endTime, input.now);
+  const scheduleDecision = fitsRoomSchedule(room, request.startTime, request.endTime, input.now, businessTimeZone);
   if (scheduleDecision !== "ok") {
     return { ok: false, error: scheduleDecision };
   }

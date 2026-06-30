@@ -22,6 +22,7 @@ export const createBookingSchema = z.object({
   startTime: z.string().datetime(),
   endTime: z.string().datetime(),
 });
+
 export const publicBookingsQuerySchema = z.object({
   roomId: z.string().min(1),
   date: z.string().refine(isValidDateOnly),

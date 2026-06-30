@@ -21,11 +21,19 @@ describe("AdminRoomsPage", () => {
       })
       .mockResolvedValueOnce({
         ok: true,
+        json: vi.fn().mockResolvedValue({ settings: { businessTimeZone: "Europe/Berlin" } }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
         json: vi.fn().mockResolvedValue({ room: { id: "room-1" } }),
       })
       .mockResolvedValueOnce({
         ok: true,
         json: vi.fn().mockResolvedValue({ rooms: [] }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: vi.fn().mockResolvedValue({ settings: { businessTimeZone: "Europe/Berlin" } }),
       });
     vi.stubGlobal("fetch", fetchMock);
 
@@ -44,8 +52,7 @@ describe("AdminRoomsPage", () => {
     expect(screen.queryByLabelText("Saturday")).not.toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Create room" }));
 
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3));
-    expect(fetchMock).toHaveBeenNthCalledWith(2, "/api/admin/rooms", {
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith("/api/admin/rooms", {
       method: "POST",
       body: JSON.stringify({
         name: "Late Room",
@@ -64,7 +71,7 @@ describe("AdminRoomsPage", () => {
         "Content-Type": "application/json",
         Authorization: "Bearer admin-token",
       },
-    });
+    }));
   });
 
   it("deletes a room after confirmation", async () => {
@@ -98,11 +105,19 @@ describe("AdminRoomsPage", () => {
       })
       .mockResolvedValueOnce({
         ok: true,
+        json: vi.fn().mockResolvedValue({ settings: { businessTimeZone: "Europe/Berlin" } }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
         json: vi.fn().mockResolvedValue({ ok: true }),
       })
       .mockResolvedValueOnce({
         ok: true,
         json: vi.fn().mockResolvedValue({ rooms: [] }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: vi.fn().mockResolvedValue({ settings: { businessTimeZone: "Europe/Berlin" } }),
       });
     vi.stubGlobal("fetch", fetchMock);
 
@@ -112,7 +127,7 @@ describe("AdminRoomsPage", () => {
     await user.click(screen.getByRole("button", { name: "Delete" }));
 
     expect(confirmSpy).toHaveBeenCalledWith("Delete this room?");
-    expect(fetchMock).toHaveBeenNthCalledWith(2, "/api/admin/rooms/room-1", {
+    expect(fetchMock).toHaveBeenCalledWith("/api/admin/rooms/room-1", {
       method: "DELETE",
       headers: {
         "Content-Type": "application/json",

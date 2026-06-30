@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { AdminDashboardPage } from "./AdminDashboardPage";
@@ -213,6 +213,86 @@ describe("AdminDashboardPage", () => {
 
     expect(await screen.findByText(/Apr 29, 10:00 - 11:00/)).toBeInTheDocument();
     expect(screen.queryByText(/4月29日/)).not.toBeInTheDocument();
-    expect(screen.getByText(/Germany time \(Europe\/Berlin\)/)).toBeInTheDocument();
+    expect(screen.getAllByText(/Germany time \(Europe\/Berlin\)/).length).toBeGreaterThanOrEqual(1);
+  });
+
+  it("formats dashboard bookings with the configured business timezone", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    vi.setSystemTime(new Date("2026-04-29T12:00:00.000Z"));
+    window.localStorage.setItem("adminToken", "admin-token");
+    window.localStorage.setItem("adminLanguage", "en");
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        json: vi.fn().mockResolvedValue({
+          rooms: [buildRoom({ id: "room-1", name: "Board Room" })],
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: vi.fn().mockResolvedValue({
+          rooms: [],
+          bookings: [
+            buildAdminBooking({
+              id: "booking-1",
+              startTime: "2026-04-30T02:00:00.000Z",
+              endTime: "2026-04-30T03:00:00.000Z",
+            }),
+          ],
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: vi.fn().mockResolvedValue({ settings: { businessTimeZone: "America/New_York" } }),
+      });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<AdminDashboardPage />);
+
+    expect(await screen.findByLabelText("Business time zone")).toHaveValue("America/New_York");
+    expect(await screen.findByText(/Apr 29, 22:00 - 23:00/)).toBeInTheDocument();
+    expect(screen.getAllByText(/New York time \(America\/New_York\)/).length).toBeGreaterThanOrEqual(1);
+  });
+
+  it("saves the selected business timezone from the dashboard", async () => {
+    window.localStorage.setItem("adminToken", "admin-token");
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        json: vi.fn().mockResolvedValue({ rooms: [] }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: vi.fn().mockResolvedValue({ bookings: [], rooms: [] }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: vi.fn().mockResolvedValue({ settings: { businessTimeZone: "Europe/Berlin" } }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: vi.fn().mockResolvedValue({ settings: { businessTimeZone: "Asia/Shanghai" } }),
+      });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<AdminDashboardPage />);
+
+    fireEvent.change(await screen.findByLabelText("Business time zone"), {
+      target: { value: "Asia/Shanghai" },
+    });
+
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenLastCalledWith("/api/admin/business-settings", {
+        method: "PUT",
+        body: JSON.stringify({ businessTimeZone: "Asia/Shanghai" }),
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: "Bearer admin-token",
+        },
+      }),
+    );
+    expect(await screen.findByText("Business time zone saved.")).toBeInTheDocument();
   });
 });

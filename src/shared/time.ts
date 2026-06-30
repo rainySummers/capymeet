@@ -1,6 +1,126 @@
 export const BUSINESS_TIME_ZONE = "Europe/Berlin";
 export const BUSINESS_TIME_ZONE_LABEL = "Germany time (Europe/Berlin)";
 
+export type TimeZoneLabelLanguage = "en" | "zh";
+
+export interface BusinessTimeZoneOption {
+  value: string;
+  labelEn: string;
+  labelZh: string;
+  emailLabel: string;
+}
+
+export const BUSINESS_TIME_ZONE_OPTIONS: BusinessTimeZoneOption[] = [
+  {
+    value: "Europe/Berlin",
+    labelEn: "Germany time (Europe/Berlin)",
+    labelZh: "德国时间（Europe/Berlin）",
+    emailLabel: "Europe/Berlin (Berlin time)",
+  },
+  {
+    value: "Asia/Shanghai",
+    labelEn: "China time (Asia/Shanghai)",
+    labelZh: "中国时间（Asia/Shanghai）",
+    emailLabel: "Asia/Shanghai (China time)",
+  },
+  {
+    value: "Asia/Hong_Kong",
+    labelEn: "Hong Kong time (Asia/Hong_Kong)",
+    labelZh: "香港时间（Asia/Hong_Kong）",
+    emailLabel: "Asia/Hong_Kong (Hong Kong time)",
+  },
+  {
+    value: "Asia/Singapore",
+    labelEn: "Singapore time (Asia/Singapore)",
+    labelZh: "新加坡时间（Asia/Singapore）",
+    emailLabel: "Asia/Singapore (Singapore time)",
+  },
+  {
+    value: "Asia/Tokyo",
+    labelEn: "Tokyo time (Asia/Tokyo)",
+    labelZh: "东京时间（Asia/Tokyo）",
+    emailLabel: "Asia/Tokyo (Tokyo time)",
+  },
+  {
+    value: "Asia/Dubai",
+    labelEn: "Dubai time (Asia/Dubai)",
+    labelZh: "迪拜时间（Asia/Dubai）",
+    emailLabel: "Asia/Dubai (Dubai time)",
+  },
+  {
+    value: "Asia/Kolkata",
+    labelEn: "India time (Asia/Kolkata)",
+    labelZh: "印度时间（Asia/Kolkata）",
+    emailLabel: "Asia/Kolkata (India time)",
+  },
+  {
+    value: "Europe/London",
+    labelEn: "London time (Europe/London)",
+    labelZh: "伦敦时间（Europe/London）",
+    emailLabel: "Europe/London (London time)",
+  },
+  {
+    value: "Europe/Paris",
+    labelEn: "Paris time (Europe/Paris)",
+    labelZh: "巴黎时间（Europe/Paris）",
+    emailLabel: "Europe/Paris (Paris time)",
+  },
+  {
+    value: "America/New_York",
+    labelEn: "New York time (America/New_York)",
+    labelZh: "纽约时间（America/New_York）",
+    emailLabel: "America/New_York (New York time)",
+  },
+  {
+    value: "America/Chicago",
+    labelEn: "Chicago time (America/Chicago)",
+    labelZh: "芝加哥时间（America/Chicago）",
+    emailLabel: "America/Chicago (Chicago time)",
+  },
+  {
+    value: "America/Denver",
+    labelEn: "Denver time (America/Denver)",
+    labelZh: "丹佛时间（America/Denver）",
+    emailLabel: "America/Denver (Denver time)",
+  },
+  {
+    value: "America/Los_Angeles",
+    labelEn: "Los Angeles time (America/Los_Angeles)",
+    labelZh: "洛杉矶时间（America/Los_Angeles）",
+    emailLabel: "America/Los_Angeles (Los Angeles time)",
+  },
+  {
+    value: "America/Toronto",
+    labelEn: "Toronto time (America/Toronto)",
+    labelZh: "多伦多时间（America/Toronto）",
+    emailLabel: "America/Toronto (Toronto time)",
+  },
+  {
+    value: "America/Sao_Paulo",
+    labelEn: "Sao Paulo time (America/Sao_Paulo)",
+    labelZh: "圣保罗时间（America/Sao_Paulo）",
+    emailLabel: "America/Sao_Paulo (Sao Paulo time)",
+  },
+  {
+    value: "Australia/Sydney",
+    labelEn: "Sydney time (Australia/Sydney)",
+    labelZh: "悉尼时间（Australia/Sydney）",
+    emailLabel: "Australia/Sydney (Sydney time)",
+  },
+  {
+    value: "Pacific/Auckland",
+    labelEn: "Auckland time (Pacific/Auckland)",
+    labelZh: "奥克兰时间（Pacific/Auckland）",
+    emailLabel: "Pacific/Auckland (Auckland time)",
+  },
+  {
+    value: "UTC",
+    labelEn: "UTC (UTC)",
+    labelZh: "协调世界时（UTC）",
+    emailLabel: "UTC",
+  },
+];
+
 interface ZonedParts {
   year: number;
   month: number;
@@ -62,32 +182,37 @@ function parseDateTimeLocal(value: string): { date: string; time: string } {
   return { date: match[1], time: match[2] };
 }
 
-export function formatBusinessTime(value: string | Date): string {
+export function formatBusinessTime(value: string | Date, timeZone = BUSINESS_TIME_ZONE): string {
   return new Intl.DateTimeFormat("en-GB", {
-    timeZone: BUSINESS_TIME_ZONE,
+    timeZone,
     hour: "2-digit",
     minute: "2-digit",
     hour12: false,
   }).format(value instanceof Date ? value : new Date(value));
 }
 
-export function formatBusinessTimeRange(startTime: string | Date, endTime: string | Date): string {
-  return `${formatBusinessTime(startTime)} - ${formatBusinessTime(endTime)}`;
+export function formatBusinessTimeRange(
+  startTime: string | Date,
+  endTime: string | Date,
+  timeZone = BUSINESS_TIME_ZONE,
+): string {
+  return `${formatBusinessTime(startTime, timeZone)} - ${formatBusinessTime(endTime, timeZone)}`;
 }
 
 export function formatBusinessDate(
   value: string | Date,
   locale = "en-US",
   options: Intl.DateTimeFormatOptions = { year: "numeric", month: "short", day: "numeric" },
+  timeZone = BUSINESS_TIME_ZONE,
 ): string {
   return new Intl.DateTimeFormat(locale, {
-    timeZone: BUSINESS_TIME_ZONE,
+    timeZone,
     ...options,
   }).format(value instanceof Date ? value : new Date(value));
 }
 
-export function formatBusinessDateTime(value: string | Date, locale = "en-US"): string {
-  return `${formatBusinessDate(value, locale)}, ${formatBusinessTime(value)}`;
+export function formatBusinessDateTime(value: string | Date, locale = "en-US", timeZone = BUSINESS_TIME_ZONE): string {
+  return `${formatBusinessDate(value, locale, { year: "numeric", month: "short", day: "numeric" }, timeZone)}, ${formatBusinessTime(value, timeZone)}`;
 }
 
 export function isValidTimeZone(timeZone: string): boolean {
@@ -97,6 +222,22 @@ export function isValidTimeZone(timeZone: string): boolean {
   } catch {
     return false;
   }
+}
+
+export function formatBusinessTimeZoneLabel(
+  timeZone = BUSINESS_TIME_ZONE,
+  language: TimeZoneLabelLanguage = "en",
+): string {
+  const option = BUSINESS_TIME_ZONE_OPTIONS.find((candidate) => candidate.value === timeZone);
+  if (option) {
+    return language === "zh" ? option.labelZh : option.labelEn;
+  }
+  return timeZone;
+}
+
+export function formatEmailTimeZoneLabel(timeZone = BUSINESS_TIME_ZONE): string {
+  const option = BUSINESS_TIME_ZONE_OPTIONS.find((candidate) => candidate.value === timeZone);
+  return option?.emailLabel ?? timeZone;
 }
 
 export function getZonedParts(value: string | Date, timeZone = BUSINESS_TIME_ZONE): ZonedParts {

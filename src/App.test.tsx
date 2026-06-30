@@ -84,6 +84,20 @@ describe("App routing", () => {
     await waitFor(() => expect(api.listRooms).toHaveBeenCalled());
   });
 
+  test("switches public booking pages between English and Chinese and remembers the choice", async () => {
+    window.localStorage.setItem("publicLanguage", "zh");
+    window.history.pushState({}, "", "/");
+    render(<App />);
+
+    expect(await screen.findByRole("heading", { name: "预订会议室" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "English" })).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: "English" }));
+
+    expect(screen.getByRole("heading", { name: "Book a Meeting Room" })).toBeInTheDocument();
+    expect(window.localStorage.getItem("publicLanguage")).toBe("en");
+  });
+
   test("renders the cancellation page on /cancel", () => {
     window.history.pushState({}, "", "/cancel");
     render(<App />);
@@ -92,11 +106,30 @@ describe("App routing", () => {
     expect(screen.queryByLabelText("Phone number")).not.toBeInTheDocument();
   });
 
+  test("renders the cancellation page in Chinese when public language is Chinese", () => {
+    window.localStorage.setItem("publicLanguage", "zh");
+    window.history.pushState({}, "", "/cancel");
+    render(<App />);
+
+    expect(screen.getByRole("heading", { name: "无法取消预订" })).toBeInTheDocument();
+    expect(screen.getByText("自助取消功能已移除。如需修改预订，请联系管理员。")).toBeInTheDocument();
+  });
+
   test("renders the tablet page on /pad/:deviceCode", async () => {
     window.history.pushState({}, "", "/pad/pad-1");
     render(<App />);
 
     expect(await screen.findByText("Meeting Room")).toBeInTheDocument();
+  });
+
+  test("renders the tablet page in Chinese when public language is Chinese", async () => {
+    window.localStorage.setItem("publicLanguage", "zh");
+    window.history.pushState({}, "", "/pad/pad-1");
+    render(<App />);
+
+    expect(await screen.findByText("会议室")).toBeInTheDocument();
+    expect(screen.getByText("未选择会议室")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "English" })).toBeInTheDocument();
   });
 
   test("renders the admin login page on /admin/login", () => {

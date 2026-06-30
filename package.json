@@ -28,7 +28,7 @@
     "deploy:demo-cleanup": "wrangler deploy --config wrangler.demo-cleanup.toml"
   },
   "dependencies": {
-    "@hono/zod-validator": "^0.7.6",
+    "@hono/zod-validator": "^0.8.0",
     "bcryptjs": "^3.0.3",
     "hono": "^4.12.15",
     "jose": "^6.2.3",
